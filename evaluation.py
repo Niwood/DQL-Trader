@@ -129,7 +129,7 @@ class ModelAssessment:
         # bl3 = _baseline_model()
 
         # Reset env
-        obs = self.env.reset()
+        obs, _ = self.env.reset()
 
         # Random model
         # self.model = self._create_model()
@@ -169,9 +169,9 @@ class ModelAssessment:
     def render(self):
 
         if self.astats is False:
-            print(f'Hold triggers: {round( self.actions.count(0)/len(self.actions) ,3)}')
-            print(f'Buy triggers: {round( self.actions.count(1)/len(self.actions) ,3)}')
-            print(f'Sell triggers: {round( self.actions.count(2)/len(self.actions) ,3)}')
+            print(f'Hold triggers: {self.actions.count(0)} ({round( self.actions.count(0)/len(self.actions) ,3)})')
+            print(f'Buy triggers: {self.actions.count(1)} ({round( self.actions.count(1)/len(self.actions) ,3)})')
+            print(f'Sell triggers: {self.actions.count(2)} ({round( self.actions.count(2)/len(self.actions) ,3)})')
             self.env.render()
         else:
             self.env.render(stats=self.astats)

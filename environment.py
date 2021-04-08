@@ -13,7 +13,7 @@ from backtesting.test import GOOG
 from data_loader import DataLoader
 from math import copysign
 from tools import safe_div
-
+pd.options.mode.chained_assignment = None
 
 
 INITIAL_ACCOUNT_BALANCE = 100_000
@@ -34,6 +34,7 @@ class StockTradingEnv(gym.Env):
         self.max_steps = max_steps
         self.static_initial_step = static_initial_step
         self.generate_est_targets = generate_est_targets
+        self.requested_target = 0
 
         # Set number range as df index and save date index
         self.df = df.copy()
@@ -50,11 +51,15 @@ class StockTradingEnv(gym.Env):
 
 
 
-
     def _next_observation(self):
         # Slice df in current steps
         _df = self.df.loc[self.current_step - (self.LOOK_BACK_WINDOW-1) : self.current_step].copy()
         
+        # Re-slice the frame for requested target in pre-training
+        if self.generate_est_targets:
+            _df, target = self._specific_slice(_df, requested_target=self.requested_target)
+        else:
+            target = None
 
         # Copy df for LT features
         _df_LT = _df.copy()
@@ -72,34 +77,55 @@ class StockTradingEnv(gym.Env):
         # Drop LT features from _df
         _df.drop(lt_feats, axis=1, inplace=True)
         
+        # Drop conventional features
+        
+        _df_obs = _df.drop(['close', 'high', 'low', 'open', 'volume'], axis=1).to_numpy()
+        return {'st':_df_obs, 'lt':_df_LT_obs}, target
 
-        # Generate target column for pre-training
-        if self.generate_est_targets:
 
-            # Lowess and lowess grad
-            _df['lowess'] = low(_df.close, _df.index, frac=0.08)[:, 1]
-            _df['lowess_grad'] = low(np.gradient(_df.lowess), _df.index, frac=0.08)[:, 1]
 
-            # Detect sign change
-            _df.lowess_grad = np.sign(_df.lowess_grad)
-            _df.lowess_grad = (_df.lowess_grad.shift(periods=1) - _df.lowess_grad)/2
-            _df.lowess_grad.fillna(0, inplace=True)
+    def _specific_slice(self, _df, requested_target=0):
+        # Slice df on a specific target that is calculated from
+        # a Locally Weighted Scatterplot Smoothing on the close column to determine local max/min
 
-            # Build target
-            target = np.dstack((
-                ((_df.lowess_grad == 0) * 1).to_numpy(),
-                ((_df.lowess_grad < 0) * 1).to_numpy(),
-                ((_df.lowess_grad > 0) * 1).to_numpy()
-                ))[0][-1]
+        # Lowess and lowess grad
+        _df['lowess'] = low(_df.close, _df.index, frac=0.08)[:, 1]
+        _df['lowess_grad'] = low(np.gradient(_df.lowess), _df.index, frac=0.08)[:, 1]
 
-            # Drop conventional features
-            _df_obs = _df.drop(['close', 'high', 'low', 'open', 'volume', 'lowess', 'lowess_grad'], axis=1).to_numpy()
-            return {'st':_df_obs, 'lt':_df_LT_obs}, target
-        else:
-            # Drop conventional features
-            _df_obs = _df.drop(['close', 'high', 'low', 'open', 'volume'], axis=1).to_numpy()
-            return {'st':_df_obs, 'lt':_df_LT_obs}
+        # Detect sign change
+        _df.lowess_grad = np.sign(_df.lowess_grad)
+        _df.lowess_grad = (_df.lowess_grad.shift(periods=1) - _df.lowess_grad)/2
+        _df.lowess_grad.fillna(0, inplace=True)
 
+        # Build target stack: [ [1,0,0], [1,0,0], [0,1,0], ... ]
+        target = np.dstack((
+            ((_df.lowess_grad == 0) * 1).to_numpy(),
+            ((_df.lowess_grad < 0) * 1).to_numpy(),
+            ((_df.lowess_grad > 0) * 1).to_numpy()
+            ))[0]
+
+        # Get index of requested target
+        _target = np.array([np.argmax(i) for i in target])
+        try:
+            selected_target_idx = np.random.choice(np.where(_target == requested_target)[0]) #Take a random choice
+        except:
+            _old_requested_target = requested_target
+            requested_target = 1 if requested_target==2 else 2
+            try:
+                selected_target_idx = np.random.choice(np.where(_target == requested_target)[0])
+                # print(f'--- Could not find target: {_old_requested_target} - switched to {requested_target} instead')
+            except:
+                requested_target = 0
+                selected_target_idx = np.random.choice(np.where(_target == requested_target)[0])
+                # print(f'--- Could not find target: 1 or 2 - switched to {requested_target} instead')
+
+        selected_df_idx = _df.index[selected_target_idx] #Get the df index
+
+        # Drop rows used for lowess
+        _df = _df.drop(['lowess', 'lowess_grad'], axis=1)
+
+        return self.df.loc[selected_df_idx - (self.LOOK_BACK_WINDOW-1) : selected_df_idx], target[selected_target_idx]
+        
 
 
     def _take_action(self, action):
@@ -212,13 +238,24 @@ class StockTradingEnv(gym.Env):
             quit()
 
         # Update next observation
-        obs = self._next_observation()
+        obs, _ = self._next_observation()
 
         # Done if net worth is negative
         if not done:
             done = self.net_worth <= 0
 
         return obs, reward, done
+
+
+
+    def _set_init_step(self):
+        # To generate initial step
+        if self.static_initial_step == 0:
+            self.current_step = random.randint(
+                self.LOOK_BACK_WINDOW+60, len(self.df.loc[:, 'open'].values)-60
+                )
+        else:
+            self.current_step = self.static_initial_step + self.LOOK_BACK_WINDOW + 2
 
 
 
@@ -236,18 +273,14 @@ class StockTradingEnv(gym.Env):
         self.sell_triggers = 0
         self.amounts = list()
 
-        # Set the current step to a random point within the data frame
-        if self.static_initial_step == 0:
-            self.current_step = random.randint(self.LOOK_BACK_WINDOW+60, len(self.df.loc[:, 'open'].values)-60)
-        else:
-            self.current_step = self.static_initial_step + self.LOOK_BACK_WINDOW + 2
+        # Set initial values
+        self._set_init_step()
         self.start_step = self.current_step
         self.initial_price = self.df.loc[self.start_step, "close"]
         self.initial_date = self.date_index[self.current_step]
 
         
         # Copy df to use for reward algo
-        # self.df_reward = self.df.loc[self.start_step - lowess_days_pad : self.start_step + self.max_steps + lowess_days_pad].copy()
         self.df_reward = self.df.loc[self.start_step:self.start_step+self.max_steps].copy()
         self.df_reward['diff'] = self.df_reward.close.diff()
         self.df_reward['pos_diff'] = self.df_reward['diff'][(self.df_reward['diff'] > 0)]
@@ -304,11 +337,14 @@ if __name__ == '__main__':
     # df = get_dummy_data()
     
     
-    dl = DataLoader(dataframe='google', remove_features=['close', 'high', 'low', 'open', 'volume'])
+    dl = DataLoader(dataframe='sine', remove_features=['close', 'high', 'low', 'open', 'volume'])
     df = dl.df
 
     env = StockTradingEnv(df, look_back_window=300, static_initial_step=0, generate_est_targets=True)
+    env.requested_target = 1
     env.reset()
+
+    quit()
     env.step(1)
     
     for i in range(10):

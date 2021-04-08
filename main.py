@@ -180,7 +180,7 @@ class Trader:
             step = 1
 
             # Reset environment and get initial state
-            current_state = self.env.reset()
+            current_state, _ = self.env.reset()
 
             # Reset flag and start iterating until episode ends
             done = False

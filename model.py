@@ -133,7 +133,6 @@ class Agent:
             metrics=['Precision', 'Recall', AUC(curve='PR')]
         )
         
-
         return model
 
 
@@ -153,13 +152,19 @@ class Agent:
         # Init env for pre-train
         _env = StockTradingEnv(df, look_back_window=self.num_time_steps, generate_est_targets=True)
 
-        # Sample from env
+        # Sample from env for balanced a target set
         batch_loader = {'lt':list(), 'st':list(), 'target':list()}
-        for _ in tqdm(range(num_batches), desc='Generating batches for pre-training'):
-            state, target = _env.reset()
-            batch_loader['st'].append(state['st'])
-            batch_loader['lt'].append(state['lt'])
-            batch_loader['target'].append(target)
+        _num_sub_batches = int(num_batches/3)
+
+        for requested_target in range(3): #For each action
+            for _ in tqdm(range(_num_sub_batches), desc=f'Generating pre-training batches for action {requested_target}'):
+                _env.requested_target = requested_target
+                state, target = _env.reset()
+                if (state['st'].shape[0], state['lt'].shape[0]) != (self.num_time_steps, self.num_time_steps):
+                    continue
+                batch_loader['st'].append(state['st'])
+                batch_loader['lt'].append(state['lt'])
+                batch_loader['target'].append(target)
 
 
         a = [np.argmax(i) for i in batch_loader['target']]
@@ -349,14 +354,14 @@ if __name__ == '__main__':
     dl = DataLoader(dataframe='sine', remove_features=['close', 'high', 'low', 'open', 'volume'])
     df = dl.df
 
-    num_steps = 90
+    num_steps = 300
     env = StockTradingEnv(df, look_back_window=num_steps)
     agent = Agent(
         num_st_features=dl.num_st_features,
         num_lt_features=dl.num_lt_features,
         num_time_steps=num_steps)
     
-    agent._pre_train(df, epochs=200, num_batches=10_000, lr_preTrain=1e-3)
+    agent._pre_train(df, epochs=200, num_batches=1_000, lr_preTrain=1e-4)
     print(f' compare_initial_weights: {agent.compare_initial_weights()}')
 
 
