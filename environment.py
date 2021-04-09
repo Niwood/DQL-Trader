@@ -89,8 +89,8 @@ class StockTradingEnv(gym.Env):
         # a Locally Weighted Scatterplot Smoothing on the close column to determine local max/min
 
         # Lowess and lowess grad
-        _df['lowess'] = low(_df.close, _df.index, frac=0.08)[:, 1]
-        _df['lowess_grad'] = low(np.gradient(_df.lowess), _df.index, frac=0.08)[:, 1]
+        _df['lowess'] = low(_df.close, _df.index, frac=0.1)[:, 1]
+        _df['lowess_grad'] = low(np.gradient(_df.lowess), _df.index, frac=0.1)[:, 1]
 
         # Detect sign change
         _df.lowess_grad = np.sign(_df.lowess_grad)
@@ -196,25 +196,21 @@ class StockTradingEnv(gym.Env):
         Loose reward:
             - The asset goes up and we have not invested
             - The asset goes down and we have invested
-            
-        copysign(value, sign)
         '''
-        # current_lowess = self.df_reward.lowess.loc[self.current_step]
-        current_holding = self.shares_held * self.current_price / self.net_worth
 
-        reward = (self.net_worth / INITIAL_ACCOUNT_BALANCE) / self.df_reward.teomax.loc[self.current_step]
+        _teomax_net_worth = self.df_reward.teomax.loc[self.current_step] * INITIAL_ACCOUNT_BALANCE
+        reward = self.net_worth / _teomax_net_worth
+
         if action == 2: # sell
             # reward += -1 * copysign(current_lowess_grad2_scaled, current_lowess_grad2) # Down/Up shift 
             # reward -= abs(current_lowess_grad_scaled) # Less reward if not triggered on max/min points
             reward *= 1 - self.sell_triggers / self.max_steps # More triggers causes less reward
-            # reward = 0
             # pass
             
         elif action == 1: # buy
             # reward += copysign(current_lowess_grad2_scaled, current_lowess_grad2) # Down/Up shift
             # reward -= abs(current_lowess_grad_scaled) # Less reward if not triggered on max/min points
             reward *= 1 - self.buy_triggers / self.max_steps  # More triggers causes less reward
-            # reward = 0
             # pass
 
         elif action == 0: # hold
@@ -223,17 +219,19 @@ class StockTradingEnv(gym.Env):
             # reward = 0
             pass
 
-        # reward += ( 1 - INITIAL_ACCOUNT_BALANCE / self.net_worth) * 100
+
         reward *= delay_modifier
+
         
-        if reward > 1 + 1e-05:
-            print('### REARD TOO BIGG ###')
+        if reward > 1 + 1e-05: #1e-05 due to rounding errors
+            print('### REWARD TOO BIG ###')
             print ('reward: ', reward)
-            print('action: ',action)
-            print(self.net_worth / INITIAL_ACCOUNT_BALANCE)
+            print('networth/initial balance: ', self.net_worth / INITIAL_ACCOUNT_BALANCE)
             print('TEOMAX: ',self.df_reward.teomax.loc[self.current_step])
             print('initial price: ', self.initial_price)
             print('current price: ', self.df.close.loc[self.current_step])
+            print('REWARD BEFORE MOD:', (self.net_worth / INITIAL_ACCOUNT_BALANCE) / self.df_reward.teomax.loc[self.current_step])
+            print('DELAY MODIFIER', delay_modifier)
             print('#######')
             quit()
 
@@ -245,7 +243,6 @@ class StockTradingEnv(gym.Env):
             done = self.net_worth <= 0
 
         return obs, reward, done
-
 
 
     def _set_init_step(self):
@@ -275,23 +272,19 @@ class StockTradingEnv(gym.Env):
 
         # Set initial values
         self._set_init_step()
-        self.start_step = self.current_step
+        self.start_step = self.current_step + 1
         self.initial_price = self.df.loc[self.start_step, "close"]
         self.initial_date = self.date_index[self.current_step]
 
         
         # Copy df to use for reward algo
         self.df_reward = self.df.loc[self.start_step:self.start_step+self.max_steps].copy()
-        self.df_reward['diff'] = self.df_reward.close.diff()
-        self.df_reward['pos_diff'] = self.df_reward['diff'][(self.df_reward['diff'] > 0)]
-        self.df_reward['teomax'] = 1 + (self.df_reward['diff'][(self.df_reward['diff'] > 0)].cumsum() / self.df_reward.loc[self.current_step, 'close'])
-        self.df_reward['teomax'] = self.df_reward['teomax'].fillna(method='ffill')
-        self.df_reward['teomax'] = self.df_reward['teomax'].fillna(1)
+        self.df_reward['shifted'] = self.df_reward.close.shift()
+        self.df_reward['div'] = self.df_reward.close / self.df_reward.shifted
+        self.df_reward['pos_shift'] = self.df_reward['div'] > 1
+        self.df_reward['pos_return'] = self.df_reward['div'][self.df_reward['pos_shift']]
+        self.df_reward['teomax'] = self.df_reward['pos_return'].fillna(1).cumprod()
 
-
-        # print(self.df_reward[['close', 'diff', 'pos_diff', 'teomax']].head(30))
-        # print(self.df_reward[['close', 'diff', 'pos_diff', 'teomax']].tail(30))
-        # quit()
 
 
         return self._next_observation()

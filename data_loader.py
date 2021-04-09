@@ -20,10 +20,10 @@ class DataLoader:
         elif dataframe == 'sine':
             self.df = GOOG
             self.df_name = 'sine'
-            sin_array = np.linspace(0, 20*np.pi, len(self.df))+(random.randint(2, 18)/10)
-            price = np.sin(sin_array)+5
+            sin_array = np.linspace(0, 200*np.pi, len(self.df))
+            price = (np.sin(sin_array)*3 + 10) + np.random.normal(0,0.3,len(self.df))
             self.df.Close = price
-            self.df.Open = price * np.random.rand()
+            self.df.Open = price + np.random.normal(0,0.3,len(self.df))
             self.df.High = price * 1.02
             self.df.Low = price * 0.996
             self.df.Volume *= self.df.Close
@@ -135,10 +135,10 @@ if __name__ == '__main__':
     
     dl = DataLoader(dataframe='sine', remove_features=['high', 'low', 'open', 'volume'])
     df = dl.df
-    # df.index = list(range(len(df)))
-    # df = df.loc[100:400]
+    df.index = list(range(len(df)))
+    df = df.loc[100:190]
 
     print(df)
 
-    # df.plot(subplots=True)
-    # plt.show()
+    df.plot(subplots=True)
+    plt.show()

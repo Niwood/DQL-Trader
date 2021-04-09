@@ -351,17 +351,17 @@ if __name__ == '__main__':
     from sklearn.preprocessing import MinMaxScaler
     import pandas_ta as ta
 
-    dl = DataLoader(dataframe='sine', remove_features=['close', 'high', 'low', 'open', 'volume'])
+    dl = DataLoader(dataframe='google', remove_features=['close', 'high', 'low', 'open', 'volume'])
     df = dl.df
 
-    num_steps = 300
+    num_steps = 90
     env = StockTradingEnv(df, look_back_window=num_steps)
     agent = Agent(
         num_st_features=dl.num_st_features,
         num_lt_features=dl.num_lt_features,
         num_time_steps=num_steps)
     
-    agent._pre_train(df, epochs=200, num_batches=1_000, lr_preTrain=1e-4)
+    agent._pre_train(df, epochs=500, num_batches=3_000, lr_preTrain=1e-4)
     print(f' compare_initial_weights: {agent.compare_initial_weights()}')
 
 

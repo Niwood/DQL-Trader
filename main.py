@@ -49,9 +49,9 @@ class Trader:
         self.dl = DataLoader(dataframe=self.dataframe, remove_features=['close', 'high', 'low', 'open', 'volume'])
         self.df = self.dl.df
 
-        self.num_time_steps = 300 #number of sequences that will be fed into the model
+        self.num_time_steps = 90 #number of sequences that will be fed into the model
         self.agent = Agent(num_st_features=self.dl.num_st_features, num_lt_features=self.dl.num_lt_features, num_time_steps=self.num_time_steps)
-        self.agent._pre_train(self.df, epochs=500, num_batches=1000)
+        self.agent._pre_train(self.df, epochs=300, num_batches=10_000)
         self.env = StockTradingEnv(
             self.df,
             look_back_window=self.num_time_steps,
