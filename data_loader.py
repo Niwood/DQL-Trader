@@ -119,6 +119,9 @@ class DataPack:
         self.remove_features = remove_features
         self.ticker = ticker
 
+        # Save original data
+        # self.org = dataframe.Close.copy()
+
         # Load data
         self.df = dataframe
 
@@ -128,7 +131,7 @@ class DataPack:
         self.count_features()
 
         # Add original values to df
-        self.df = self.df.join(self.df_ORG)
+        self.df = self.df.join(self.org)
 
         # Attributes
         self.date_index = self.df.index.copy()
@@ -198,7 +201,7 @@ class DataPack:
         self.df.dropna(inplace=True)
 
         # Copy df for original
-        self.df_ORG = self.df[['close', 'high', 'low', 'open', 'volume']].copy()
+        self.org = self.df[['close', 'high', 'low', 'open', 'volume']].copy()
 
         # Scale all values
         self.scaler = MinMaxScaler()
@@ -220,7 +223,7 @@ class DataPack:
         
 
     def remove(self):
-        ''' Remove certain columns '''
+        ''' Remove columns '''
         if self.remove_features:
             self.df.drop(self.remove_features, axis=1, inplace=True)
         
@@ -236,7 +239,7 @@ class DataPack:
 
 if __name__ == '__main__':
     
-    data_cluster = DataCluster(dataset='realmix', remove_features=['high', 'low', 'open', 'volume'], num_stocks=100)
+    data_cluster = DataCluster(dataset='realmix', remove_features=['close', 'high', 'low', 'open', 'volume'], num_stocks=1)
     collection = data_cluster.collection
     print(len(collection))
 
@@ -248,8 +251,11 @@ if __name__ == '__main__':
         # df = df.loc[start:start+steps]
 
 
-    # df = collection[0].df
+    df = collection[0].df
     # df = df[0:300]
-    # print(df)
+    a = collection[0].org
+    a.triggers = list(range(len(a)))
+    print(a)
+
     # df.plot(subplots=True)
     # plt.show()

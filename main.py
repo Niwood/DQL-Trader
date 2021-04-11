@@ -38,7 +38,7 @@ MIN_EPSILON = 1e-6
 
 #  Stats settings
 AGGREGATE_STATS_EVERY = 1  #episodes
-EPOCH_SIZE = 1
+EPOCH_SIZE = 5
 
 # For stats
 ep_rewards = [0]
@@ -160,10 +160,6 @@ class Trader:
             json.dump(metadata, outfile)
             
 
-        # Pre-train the network
-
-
-
         # Run
         self.run()
     
@@ -280,7 +276,6 @@ class Trader:
 
     def _model_assessment(self, episode):
         ''' Make a model predict on a sample with epsilon=0 '''
-        print('***** MODEL EVAL *****')
 
         # Load data
         data_cluster = DataCluster(
@@ -310,8 +305,9 @@ class Trader:
         # Print assessment stats
         print(self.astats.loc[episode-10:episode])
 
-        # Pickle and save assessment stats
+        # Pickle and save assessment stats and simulation run
         self.astats.loc[1:episode].to_pickle(self.folder / 'astats.pkl')
+        ma.sim.to_pickle(self.folder / f'sim_{ma.ticker}_EPS{episode}of{EPISODES}.pkl')
 
 
 if __name__ == '__main__':

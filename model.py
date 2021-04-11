@@ -128,7 +128,7 @@ class Agent:
         self.cost_matrix[2, 0] = minor_cost
 
         model.compile(
-            loss=WeightedCategoricalCrossentropy(cost_mat=self.cost_matrix),
+            loss='categorical_crossentropy',
             optimizer=opt,
             metrics=['Precision', 'Recall', AUC(curve='PR')]
         )

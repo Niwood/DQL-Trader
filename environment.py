@@ -26,6 +26,7 @@ class StockTradingEnv(gym.Env):
     ACTION_SPACE_SIZE = 3 # Buy, Sell or Hold
 
 
+
     def __init__(self, collection, look_back_window, max_steps=300, static_initial_step=0, generate_est_targets=False):
         super(StockTradingEnv, self).__init__()
 
@@ -174,8 +175,10 @@ class StockTradingEnv(gym.Env):
     def step(self, action):
         # Execute one time step within the environment
         self._take_action(action)
-        self.current_step += 1
         self.current_date = self.date_index[self.current_step]
+
+        # Take next step
+        self.current_step += 1
         done = False
         
         # Check if there are no more steps in the data or we have met the maximum amount of steps
@@ -257,12 +260,12 @@ class StockTradingEnv(gym.Env):
     def reset(self):
 
         # Sample a data pack from the cluster and setup df
-        dp = np.random.choice(self.collection, replace=True)
-        self.df = dp.df
-        self.date_index = dp.date_index
+        self.dp = np.random.choice(self.collection, replace=True)
+        self.df = self.dp.df
+        self.date_index = self.dp.date_index
 
         # Reset the state of the environment to an initial state
-        self.ticker = dp.ticker
+        self.ticker = self.dp.ticker
         self.balance = INITIAL_ACCOUNT_BALANCE
         self.net_worth = INITIAL_ACCOUNT_BALANCE
         self.max_net_worth = INITIAL_ACCOUNT_BALANCE

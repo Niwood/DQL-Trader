@@ -99,11 +99,8 @@ class ModelAssessment:
     def load_model(self, model_name=None):
         # Load model
         self.model_name = model_name
-        loss_function = WeightedCategoricalCrossentropy()
         self.model = keras.models.load_model(
-            self.model_name,
-            compile=True,
-            custom_objects={loss_function.name: loss_function}
+            self.model_name
             )
 
 
@@ -120,25 +117,19 @@ class ModelAssessment:
 
     def simulate(self):
 
-        # Load baseline models
-        # bl1 = self._baseline_model()
-        # bl2 = _baseline_model()
-        # bl3 = _baseline_model()
-
         # Reset env
         obs, _ = self.env.reset()
 
-        # Random model
-        # self.model = self._create_model()
 
         # Parameters to save
+        self.ticker = self.env.ticker
         self.actions = list()
-        self.sell_buy_actions = list()
-        self.sell_buy_date = list()
         self.rewards = list()
-        
+        self.sim = self.env.dp.org
+        self.sim['trigger'] = 0
 
-        for _ in tqdm(range(self.sim_range)):
+
+        for _ in tqdm(range(self.sim_range), desc=f'Model assessment on {self.ticker}'):
             _obs_st = obs['st'].reshape((1, self.num_time_steps, self.num_st_features))
             _obs_lt = obs['lt'].reshape((1, self.num_time_steps, self.num_lt_features))
             action = self.model.predict([_obs_st, _obs_lt])
@@ -154,9 +145,9 @@ class ModelAssessment:
             self.actions.append(action)
             self.rewards.append(reward)
 
+            
             if action in (1, 2):
-                self.sell_buy_actions.append(action)
-                self.sell_buy_date.append(self.env.current_date)
+                self.sim.trigger.loc[self.env.current_date]
 
             # Break if done
             if done: break
@@ -187,7 +178,7 @@ if __name__ == '__main__':
     dc = DataCluster(dataset='google', remove_features=['close', 'high', 'low', 'open', 'volume'])
     collection = dc.collection
     
-    model_name = 'models/1618151761/1618151990_EPS20of20.model'
+    model_name = 'models/1618158837/1618158837_EPS1of20.model'
     ma = ModelAssessment(
         collection=collection,
         num_st_features=dc.num_st_features,
@@ -198,8 +189,6 @@ if __name__ == '__main__':
     ma.sim_range = 100
     ma.simulate()
 
-    print(ma.actions.count(0)/len(ma.actions))
-    print(ma.actions.count(1)/len(ma.actions))
-    print(ma.actions.count(2)/len(ma.actions))
+    print(ma.sim)
 
     print('=== EOL ===')
