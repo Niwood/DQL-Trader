@@ -1,6 +1,7 @@
 
 
 models/
+data/
 logs/
 *.pkl
 *.html

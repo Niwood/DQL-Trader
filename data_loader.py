@@ -5,28 +5,122 @@ import pandas_ta as ta
 from backtesting.test import GOOG
 import matplotlib.pyplot as plt
 import random
+from pathlib import Path
+from tqdm import tqdm
 
-class DataLoader:
 
-    def __init__(self, dataframe=None, remove_features=False):
+
+
+
+
+class DataCluster:
+    '''
+    Contains a collection of data packs
+    '''
+
+    def __init__(self, dataset=None, remove_features=False, num_stocks=1, verbose=True):
+
+        self.collection = list()
+
+        if dataset == 'google':
+            self.collection.append(
+                DataPack(dataframe=GOOG, remove_features=remove_features)
+                )
+
+        elif dataset == 'sine':
+            df = GOOG
+            sin_array = np.linspace(0, 200*np.pi, len(df))
+            price = (np.sin(sin_array)*3 + 10) + np.random.normal(0,0.3,len(df))
+            df.Close = price
+            df.Open = price + np.random.normal(0,0.3,len(df))
+            df.High = price * 1.02
+            df.Low = price * 0.996
+            df.Volume *= df.Close
+            self.collection.append(
+                DataPack(dataframe=df, remove_features=remove_features)
+                )
+
+        elif dataset == 'random':
+            df = GOOG
+            price = np.ones(len(df))
+            for _ in range(5):
+                sin_array = np.linspace(0, random.randint(50, 300)*np.pi, len(df))
+                price += (np.sin(sin_array)*3) + np.random.normal(0,0.3,len(df))
+            df.Close = price
+            df.Open = price + np.random.normal(0,0.3,len(df))
+            df.High = price * 1.02
+            df.Low = price * 0.996
+            df.Volume *= df.Close
+            self.collection.append(
+                DataPack(dataframe=df, remove_features=remove_features)
+                )
+
+        elif dataset == 'realmix':
+
+            # Specify the dir
+            data_folder = Path.cwd() / 'data'
+            all_files = [x.stem for x in data_folder.glob('*/')]
+
+            # Sample
+            iterator = range(len(all_files)) if num_stocks==0 else range(num_stocks)
+            random.shuffle(all_files)
+            files_range = list(range(len(all_files)))
+            for i in tqdm(
+                iterator, desc=f'Generating data cluster'
+                ) if verbose else iterator:
+
+                skip = False
+                while True:
+                    try:
+                        idx = i if num_stocks==0 else random.choice(files_range) #Sample an index
+                        files_range.remove(idx) #Remove that index from the list
+                    except:
+                        skip = True
+                        break
+                    _file = all_files[idx] #Get the file
+
+                    # Resample when the file is empty or unreadable
+                    try:
+                        df = pd.read_csv(f'data/{_file}.txt', delimiter = ",")
+                    except: continue 
+
+                    # Resample for small dataframes
+                    if len(df) < 500:
+                        continue 
+
+                    # All ok -> break
+                    break
+                
+                if skip: continue
+
+                df.set_index('Date', inplace=True)
+                df.drop(['OpenInt'], axis=1, inplace=True)
+                df.index = pd.to_datetime(df.index)
+                    
+                self.collection.append(
+                    DataPack(dataframe=df, ticker=_file, remove_features=remove_features)
+                    )
+
+        # Number of features
+        self.num_lt_features = self.collection[0].num_lt_features
+        self.num_st_features = self.collection[0].num_st_features
+
+
+
+class DataPack:
+    '''
+    Contains the data for one time serie
+    Performes a process of the data incl scaling and feature extraction
+    '''
+
+    def __init__(self, dataframe=None, ticker=None, remove_features=False):
 
         # Parameters
         self.remove_features = remove_features
+        self.ticker = ticker
 
         # Load data
-        if dataframe == 'google':
-            self.df = GOOG
-            self.df_name = 'google'
-        elif dataframe == 'sine':
-            self.df = GOOG
-            self.df_name = 'sine'
-            sin_array = np.linspace(0, 200*np.pi, len(self.df))
-            price = (np.sin(sin_array)*3 + 10) + np.random.normal(0,0.3,len(self.df))
-            self.df.Close = price
-            self.df.Open = price + np.random.normal(0,0.3,len(self.df))
-            self.df.High = price * 1.02
-            self.df.Low = price * 0.996
-            self.df.Volume *= self.df.Close
+        self.df = dataframe
 
         # Run init methods
         self.pre_process()
@@ -35,6 +129,12 @@ class DataLoader:
 
         # Add original values to df
         self.df = self.df.join(self.df_ORG)
+
+        # Attributes
+        self.date_index = self.df.index.copy()
+
+        # Switch to numeric index
+        self.df.index = list(range(len(self.df)))
 
 
     def pre_process(self):
@@ -131,14 +231,25 @@ class DataLoader:
                 pass
 
 
+
+
+
 if __name__ == '__main__':
     
-    dl = DataLoader(dataframe='sine', remove_features=['high', 'low', 'open', 'volume'])
-    df = dl.df
-    df.index = list(range(len(df)))
-    df = df.loc[100:190]
+    data_cluster = DataCluster(dataset='realmix', remove_features=['high', 'low', 'open', 'volume'], num_stocks=100)
+    collection = data_cluster.collection
+    print(len(collection))
 
-    print(df)
+    # for dp in collection:
+    #     print(f'{dp.ticker} has {len(dp.df)}')
+        # df.index = list(range(len(df)))
+        # steps = 90
+        # start = random.randint(10,2000)
+        # df = df.loc[start:start+steps]
 
-    df.plot(subplots=True)
-    plt.show()
+
+    # df = collection[0].df
+    # df = df[0:300]
+    # print(df)
+    # df.plot(subplots=True)
+    # plt.show()

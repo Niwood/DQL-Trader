@@ -1,7 +1,9 @@
+import sys
+
 from model import Agent
 from environment import StockTradingEnv
 from evaluation import ModelAssessment
-from data_loader import DataLoader
+from data_loader import DataCluster
 
 from tqdm import tqdm
 import numpy as np
@@ -13,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 import json
 import logging
+import random
 
 
 import keras.backend as K
@@ -24,8 +27,9 @@ from tools import safe_div
 
 
 # Environment settings
-EPISODES = 500
+EPISODES = 20
 MAX_STEPS = 300
+num_stocks = 10
 
 # Exploration settings
 epsilon = 1 
@@ -34,7 +38,7 @@ MIN_EPSILON = 1e-6
 
 #  Stats settings
 AGGREGATE_STATS_EVERY = 1  #episodes
-EPOCH_SIZE = 20
+EPOCH_SIZE = 1
 
 # For stats
 ep_rewards = [0]
@@ -45,20 +49,29 @@ class Trader:
     def __init__(self):
 
 
-        self.dataframe = 'sine'
-        self.dl = DataLoader(dataframe=self.dataframe, remove_features=['close', 'high', 'low', 'open', 'volume'])
-        self.df = self.dl.df
+        self.dataset = 'realmix'
+        self.data_cluster = DataCluster(dataset=self.dataset, remove_features=['close', 'high', 'low', 'open', 'volume'], num_stocks=num_stocks)
+        self.collection = self.data_cluster.collection
 
         self.num_time_steps = 90 #number of sequences that will be fed into the model
-        self.agent = Agent(num_st_features=self.dl.num_st_features, num_lt_features=self.dl.num_lt_features, num_time_steps=self.num_time_steps)
-        self.agent._pre_train(self.df, epochs=300, num_batches=10_000)
+        self.agent = Agent(
+            num_st_features=self.data_cluster.num_st_features,
+            num_lt_features=self.data_cluster.num_lt_features,
+            num_time_steps=self.num_time_steps
+            )
+        self.agent.pre_train(
+            self.collection,
+            epochs=20,
+            num_batches=50,
+            lr_preTrain=1e-4
+            )
         self.env = StockTradingEnv(
-            self.df,
+            self.collection,
             look_back_window=self.num_time_steps,
             max_steps=MAX_STEPS,
             static_initial_step=0
             )
-        # self.eval_env = StockTradingEnv(self.df, look_back_window=self.num_time_steps, max_steps=MAX_STEPS)
+
 
         # Epsilon
         self.epsilon_steps = [1]*epsilon_dsided_plateau + list(np.linspace(1,MIN_EPSILON,EPISODES - epsilon_dsided_plateau*2)) + [MIN_EPSILON]*(epsilon_dsided_plateau+1)
@@ -118,15 +131,14 @@ class Trader:
         # Save metadata
         metadata = {
             'model_id': self.model_id,
+            'note': ' '.join([str(x) for x in sys.argv[1::]]),
             'date': str(datetime.now()),
             'episodes': EPISODES,
             'epoch_size': EPOCH_SIZE,
             'time_steps': self.num_time_steps,
             'data': {
-                'df':self.dl.df_name,
-                'length': len(self.df),
-                'features': list(self.df.columns),
-                'number_of_features': len(self.df.columns)
+                'dataset':self.dataset,
+                'length': len(self.collection),
                 },
             'optimizer': {
                 'algorithm': K.eval(self.agent.model.optimizer._name),
@@ -187,7 +199,7 @@ class Trader:
             while not done:
 
                 # This part stays mostly the same, the change is to query a model for Q values
-                if np.random.random() > self.epsilon:
+                if random.random() > self.epsilon:
                     # Get action from Q table
                     action = np.argmax(self.agent.get_qs(current_state))
                 else:
@@ -232,7 +244,7 @@ class Trader:
 
 
     def _render(self, episode):
-        ''' Renders stats for certain episodes '''
+        ''' Renders stats for a certain episodes '''
         print('='*20)
 
         # Env to render
@@ -271,13 +283,19 @@ class Trader:
         print('***** MODEL EVAL *****')
 
         # Load data
-        df = DataLoader(dataframe=self.dataframe, remove_features=['close', 'high', 'low', 'open', 'volume']).df
+        data_cluster = DataCluster(
+            dataset=self.dataset,
+            remove_features=['close', 'high', 'low', 'open', 'volume'],
+            num_stocks=1,
+            verbose=False
+            )
+        collection = data_cluster.collection
         
         # Model assessment
         ma = ModelAssessment(
-            dataframe=df,
-            num_st_features=self.dl.num_st_features,
-            num_lt_features=self.dl.num_lt_features,
+            collection=collection,
+            num_st_features=data_cluster.num_st_features,
+            num_lt_features=data_cluster.num_lt_features,
             num_time_steps = self.num_time_steps
             )
         ma.astats = self.astats.loc[episode]

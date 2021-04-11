@@ -1,7 +1,8 @@
 from tensorflow import keras
-from data_loader import DataLoader
+from data_loader import DataCluster
 from environment import StockTradingEnv
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 
 import tensorflow.keras.backend as K
@@ -72,7 +73,7 @@ class ModelAssessment:
 
     def __init__(
         self,
-        dataframe=None,
+        collection=None,
         num_st_features=None,
         num_lt_features=None,
         num_time_steps=None,
@@ -84,18 +85,14 @@ class ModelAssessment:
         self.num_lt_features = num_lt_features
         self.num_time_steps = num_time_steps
         self.sim_range = sim_range
-        self.astats = False
+        self.astats = pd.DataFrame()
         self.model = None
-
-        # Dataset
-        self.df = dataframe
 
         # Env
         self.env = StockTradingEnv(
-            self.df,
+            collection,
             look_back_window=num_time_steps,
             static_initial_step=0)
-        self.date_index = self.env.date_index
 
 
 
@@ -112,7 +109,7 @@ class ModelAssessment:
 
 
     def _baseline_model(self):
-        ''' Returns a basleine model with randomly permuteed weights  '''
+        ''' Returns a baseline model with randomly permuteed weights  '''
         model = keras.models.load_model(self.model_name)
         weights = model.get_weights()
         weights = [np.random.permutation(weight.flat).reshape(weight.shape) for weight in weights]
@@ -168,7 +165,7 @@ class ModelAssessment:
 
     def render(self):
 
-        if self.astats is False:
+        if self.astats.empty:
             print(f'Hold triggers: {self.actions.count(0)} ({round( self.actions.count(0)/len(self.actions) ,3)})')
             print(f'Buy triggers: {self.actions.count(1)} ({round( self.actions.count(1)/len(self.actions) ,3)})')
             print(f'Sell triggers: {self.actions.count(2)} ({round( self.actions.count(2)/len(self.actions) ,3)})')
@@ -187,17 +184,17 @@ class ModelAssessment:
 
 
 if __name__ == '__main__':
-    dl = DataLoader(dataframe='google', remove_features=['close', 'high', 'low', 'open', 'volume'])
-    df = dl.df
+    dc = DataCluster(dataset='google', remove_features=['close', 'high', 'low', 'open', 'volume'])
+    collection = dc.collection
     
-    model_name = 'models/1616954622/1616954841_EPS20of500.model'
+    model_name = 'models/1618151761/1618151990_EPS20of20.model'
     ma = ModelAssessment(
-        model_name=model_name,
-        dataframe=df,
-        num_st_features=dl.num_st_features,
-        num_lt_features=dl.num_lt_features,
-        num_time_steps=180
+        collection=collection,
+        num_st_features=dc.num_st_features,
+        num_lt_features=dc.num_lt_features,
+        num_time_steps=90
         )
+    ma.load_model(model_name=model_name)
     ma.sim_range = 100
     ma.simulate()
 

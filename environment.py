@@ -10,7 +10,7 @@ from statsmodels.nonparametric.smoothers_lowess import lowess as low
 import tensorflow as tf
 
 from backtesting.test import GOOG
-from data_loader import DataLoader
+from data_loader import DataCluster
 from math import copysign
 from tools import safe_div
 pd.options.mode.chained_assignment = None
@@ -26,7 +26,7 @@ class StockTradingEnv(gym.Env):
     ACTION_SPACE_SIZE = 3 # Buy, Sell or Hold
 
 
-    def __init__(self, df, look_back_window, max_steps=300, static_initial_step=0, generate_est_targets=False):
+    def __init__(self, collection, look_back_window, max_steps=300, static_initial_step=0, generate_est_targets=False):
         super(StockTradingEnv, self).__init__()
 
         # Constants
@@ -37,9 +37,7 @@ class StockTradingEnv(gym.Env):
         self.requested_target = 0
 
         # Set number range as df index and save date index
-        self.df = df.copy()
-        self.date_index = self.df.index.copy()
-        self.df.index = list(range(len(self.df)))
+        self.collection = collection
 
         # Actions of the format Buy x%, Sell x%, Hold, etc.
         self.action_space = spaces.Box(
@@ -245,7 +243,7 @@ class StockTradingEnv(gym.Env):
         return obs, reward, done
 
 
-    def _set_init_step(self):
+    def _gen_initial_step(self):
         # To generate initial step
         if self.static_initial_step == 0:
             self.current_step = random.randint(
@@ -257,7 +255,14 @@ class StockTradingEnv(gym.Env):
 
 
     def reset(self):
+
+        # Sample a data pack from the cluster and setup df
+        dp = np.random.choice(self.collection, replace=True)
+        self.df = dp.df
+        self.date_index = dp.date_index
+
         # Reset the state of the environment to an initial state
+        self.ticker = dp.ticker
         self.balance = INITIAL_ACCOUNT_BALANCE
         self.net_worth = INITIAL_ACCOUNT_BALANCE
         self.max_net_worth = INITIAL_ACCOUNT_BALANCE
@@ -271,21 +276,18 @@ class StockTradingEnv(gym.Env):
         self.amounts = list()
 
         # Set initial values
-        self._set_init_step()
+        self._gen_initial_step()
         self.start_step = self.current_step + 1
         self.initial_price = self.df.loc[self.start_step, "close"]
-        self.initial_date = self.date_index[self.current_step]
+        self.initial_date = self.date_index[self.start_step]
 
-        
-        # Copy df to use for reward algo
+        # Copy df to use for reward algorithm
         self.df_reward = self.df.loc[self.start_step:self.start_step+self.max_steps].copy()
         self.df_reward['shifted'] = self.df_reward.close.shift()
         self.df_reward['div'] = self.df_reward.close / self.df_reward.shifted
         self.df_reward['pos_shift'] = self.df_reward['div'] > 1
         self.df_reward['pos_return'] = self.df_reward['div'][self.df_reward['pos_shift']]
         self.df_reward['teomax'] = self.df_reward['pos_return'].fillna(1).cumprod()
-
-
 
         return self._next_observation()
 
@@ -294,7 +296,9 @@ class StockTradingEnv(gym.Env):
 
     def render(self, mode='human', close=False, stats=False):
         ''' Render the environment to the screen '''
+
         _stats = {
+            'ticker': self.ticker,
             'amountBalance': round(self.balance),
             'amountAsset': round(self.total_sales_value),
             'netWorth': self.net_worth,
@@ -330,12 +334,12 @@ if __name__ == '__main__':
     # df = get_dummy_data()
     
     
-    dl = DataLoader(dataframe='sine', remove_features=['close', 'high', 'low', 'open', 'volume'])
-    df = dl.df
+    data_cluster = DataCluster(dataset='realmix', remove_features=['close', 'high', 'low', 'open', 'volume'], num_stocks=10)
+    collection = data_cluster.collection
 
-    env = StockTradingEnv(df, look_back_window=300, static_initial_step=0, generate_est_targets=True)
-    env.requested_target = 1
+    env = StockTradingEnv(collection, look_back_window=300, static_initial_step=0, generate_est_targets=False)
     env.reset()
+    env.render()
 
     quit()
     env.step(1)

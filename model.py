@@ -140,28 +140,26 @@ class Agent:
         return self.initial_model_weights - np.array([i.numpy().sum() for i in self.model.trainable_weights])
 
 
-    def _pre_train(self, _df, epochs=500, num_batches=500, lr_preTrain=1e-5):
+    def pre_train(self, collection, epochs=500, num_batches=500, lr_preTrain=1e-5):
         from environment import StockTradingEnv
-
-        df = _df.copy()
 
         # Save default lr and sub the new one for pre-training
         _lr = K.eval(self.model.optimizer.lr)
         self.model.optimizer.lr = lr_preTrain
 
         # Init env for pre-train
-        _env = StockTradingEnv(df, look_back_window=self.num_time_steps, generate_est_targets=True)
+        _env = StockTradingEnv(collection, look_back_window=self.num_time_steps, generate_est_targets=True)
 
         # Sample from env for balanced a target set
         batch_loader = {'lt':list(), 'st':list(), 'target':list()}
         _num_sub_batches = int(num_batches/3)
 
-        for requested_target in range(3): #For each action
+        for requested_target in range(3): #3 for each action
             for _ in tqdm(range(_num_sub_batches), desc=f'Generating pre-training batches for action {requested_target}'):
-                _env.requested_target = requested_target
+                _env.requested_target = requested_target #Specify the requested action for in which the env will find a dataset for
                 state, target = _env.reset()
                 if (state['st'].shape[0], state['lt'].shape[0]) != (self.num_time_steps, self.num_time_steps):
-                    continue
+                    continue #This happens when there is not enough data left of the dataframe at the sampled action
                 batch_loader['st'].append(state['st'])
                 batch_loader['lt'].append(state['lt'])
                 batch_loader['target'].append(target)
@@ -248,7 +246,7 @@ class Agent:
         _X_st = list()
         _X_lt = list()
         _y = list()
-        for index, (current_state, action, reward, new_current_state, done) in enumerate(minibatch):
+        for index, (current_state, action, reward, _, done) in enumerate(minibatch):
 
             # If not a terminal state, get new q from future states, otherwise set it to 0
             if not done:
@@ -345,30 +343,30 @@ def get_sample_weights(y_true, y_pred, cost_m):
 
 if __name__ == '__main__':
     from environment import StockTradingEnv
-    from data_loader import DataLoader
+    from data_loader import DataCluster
     from evaluation import ModelAssessment
     from backtesting.test import GOOG
     from sklearn.preprocessing import MinMaxScaler
     import pandas_ta as ta
 
-    dl = DataLoader(dataframe='google', remove_features=['close', 'high', 'low', 'open', 'volume'])
-    df = dl.df
+    dc = DataCluster(dataset='google', remove_features=['close', 'high', 'low', 'open', 'volume'])
+    collection = dc.collection
 
     num_steps = 90
-    env = StockTradingEnv(df, look_back_window=num_steps)
+    env = StockTradingEnv(collection, look_back_window=num_steps)
     agent = Agent(
-        num_st_features=dl.num_st_features,
-        num_lt_features=dl.num_lt_features,
+        num_st_features=dc.num_st_features,
+        num_lt_features=dc.num_lt_features,
         num_time_steps=num_steps)
     
-    agent._pre_train(df, epochs=500, num_batches=3_000, lr_preTrain=1e-4)
+    agent.pre_train(collection, epochs=500, num_batches=3_000, lr_preTrain=1e-4)
     print(f' compare_initial_weights: {agent.compare_initial_weights()}')
 
 
     ma = ModelAssessment(
-        dataframe=df,
-        num_st_features=dl.num_st_features,
-        num_lt_features=dl.num_lt_features,
+        collection=collection,
+        num_st_features=dc.num_st_features,
+        num_lt_features=dc.num_lt_features,
         num_time_steps=num_steps
         )
     ma.model = agent.model
