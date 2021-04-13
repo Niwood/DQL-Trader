@@ -158,11 +158,14 @@ class Agent:
             for _ in tqdm(range(_num_sub_batches), desc=f'Generating pre-training batches for action {requested_target}'):
                 _env.requested_target = requested_target #Specify the requested action for in which the env will find a dataset for
                 state, target = _env.reset()
+                
                 if (state['st'].shape[0], state['lt'].shape[0]) != (self.num_time_steps, self.num_time_steps):
+                    # print((state['st'].shape[0], state['lt'].shape[0]),  state['lt'].shape, (self.num_time_steps, self.num_time_steps))
                     continue #This happens when there is not enough data left of the dataframe at the sampled action
                 batch_loader['st'].append(state['st'])
                 batch_loader['lt'].append(state['lt'])
                 batch_loader['target'].append(target)
+
 
 
         a = [np.argmax(i) for i in batch_loader['target']]
@@ -186,6 +189,9 @@ class Agent:
 
         # Update target model weisghts
         self.target_model.set_weights(self.model.get_weights())
+
+        # Clean memory
+        del batch_loader, _env, st, lt, yhat
 
 
     def update_replay_memory(self, transition):
@@ -349,17 +355,17 @@ if __name__ == '__main__':
     from sklearn.preprocessing import MinMaxScaler
     import pandas_ta as ta
 
-    dc = DataCluster(dataset='google', remove_features=['close', 'high', 'low', 'open', 'volume'])
+    dc = DataCluster(dataset='realmix', remove_features=['close', 'high', 'low', 'open', 'volume'])
     collection = dc.collection
 
-    num_steps = 90
+    num_steps = 200
     env = StockTradingEnv(collection, look_back_window=num_steps)
     agent = Agent(
         num_st_features=dc.num_st_features,
         num_lt_features=dc.num_lt_features,
         num_time_steps=num_steps)
     
-    agent.pre_train(collection, epochs=500, num_batches=3_000, lr_preTrain=1e-4)
+    agent.pre_train(collection, epochs=500, num_batches=100, lr_preTrain=1e-4)
     print(f' compare_initial_weights: {agent.compare_initial_weights()}')
 
 

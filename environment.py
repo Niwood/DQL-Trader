@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
 from statsmodels.nonparametric.smoothers_lowess import lowess as low
+import pywt
 
 import tensorflow as tf
 
@@ -71,16 +72,28 @@ class StockTradingEnv(gym.Env):
 
         # Slice only LT features
         _df_LT = _df_LT[lt_feats]
-        _df_LT_obs = _df_LT.to_numpy()
+        # _df_LT_obs = _df_LT.to_numpy()
+        _df_LT_obs = self._make_wavelet(_df_LT.to_numpy())
+        # print(_df_LT_obs)
+        # print(_df_LT_obs.shape), quit()
 
         # Drop LT features from _df
         _df.drop(lt_feats, axis=1, inplace=True)
         
         # Drop conventional features
-        
         _df_obs = _df.drop(['close', 'high', 'low', 'open', 'volume'], axis=1).to_numpy()
+
         return {'st':_df_obs, 'lt':_df_LT_obs}, target
 
+
+
+    def _make_wavelet(self, signal):
+        # signal: (time_steps,)
+        # coef: (scales, time_steps)
+        signal = signal.reshape(signal.shape[0],)
+        scales = np.arange(1, 91)
+        coef, _ = pywt.cwt(signal, scales, wavelet='morl')
+        return np.transpose(abs(coef))
 
 
     def _specific_slice(self, _df, requested_target=0):
@@ -116,7 +129,7 @@ class StockTradingEnv(gym.Env):
             except:
                 requested_target = 0
                 selected_target_idx = np.random.choice(np.where(_target == requested_target)[0])
-                # print(f'--- Could not find target: 1 or 2 - switched to {requested_target} instead')
+                print(f'--- Could not find target: 1 or 2 - switched to {requested_target} instead')
 
         selected_df_idx = _df.index[selected_target_idx] #Get the df index
 
@@ -223,18 +236,6 @@ class StockTradingEnv(gym.Env):
 
         reward *= delay_modifier
 
-        
-        if reward > 1 + 1e-05: #1e-05 due to rounding errors
-            print('### REWARD TOO BIG ###')
-            print ('reward: ', reward)
-            print('networth/initial balance: ', self.net_worth / INITIAL_ACCOUNT_BALANCE)
-            print('TEOMAX: ',self.df_reward.teomax.loc[self.current_step])
-            print('initial price: ', self.initial_price)
-            print('current price: ', self.df.close.loc[self.current_step])
-            print('REWARD BEFORE MOD:', (self.net_worth / INITIAL_ACCOUNT_BALANCE) / self.df_reward.teomax.loc[self.current_step])
-            print('DELAY MODIFIER', delay_modifier)
-            print('#######')
-            quit()
 
         # Update next observation
         obs, _ = self._next_observation()
@@ -337,12 +338,13 @@ if __name__ == '__main__':
     # df = get_dummy_data()
     
     
-    data_cluster = DataCluster(dataset='realmix', remove_features=['close', 'high', 'low', 'open', 'volume'], num_stocks=10)
+    data_cluster = DataCluster(dataset='realmix', remove_features=['close', 'high', 'low', 'open', 'volume'], num_stocks=1)
     collection = data_cluster.collection
 
-    env = StockTradingEnv(collection, look_back_window=300, static_initial_step=0, generate_est_targets=False)
-    env.reset()
-    env.render()
+    env = StockTradingEnv(collection, look_back_window=90, static_initial_step=0, generate_est_targets=True)
+    env.requested_target = 1
+    obs = env.reset()
+    print(obs)
 
     quit()
     env.step(1)

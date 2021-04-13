@@ -27,18 +27,18 @@ from tools import safe_div
 
 
 # Environment settings
-EPISODES = 20
+EPISODES = 500
 MAX_STEPS = 300
-num_stocks = 10
+num_stocks = 1000
 
 # Exploration settings
-epsilon = 1 
+epsilon = 1
 epsilon_dsided_plateau = 10
 MIN_EPSILON = 1e-6
 
 #  Stats settings
 AGGREGATE_STATS_EVERY = 1  #episodes
-EPOCH_SIZE = 5
+EPOCH_SIZE = 10
 
 # For stats
 ep_rewards = [0]
@@ -53,7 +53,7 @@ class Trader:
         self.data_cluster = DataCluster(dataset=self.dataset, remove_features=['close', 'high', 'low', 'open', 'volume'], num_stocks=num_stocks)
         self.collection = self.data_cluster.collection
 
-        self.num_time_steps = 90 #number of sequences that will be fed into the model
+        self.num_time_steps = 300 #number of sequences that will be fed into the model
         self.agent = Agent(
             num_st_features=self.data_cluster.num_st_features,
             num_lt_features=self.data_cluster.num_lt_features,
@@ -61,8 +61,8 @@ class Trader:
             )
         self.agent.pre_train(
             self.collection,
-            epochs=20,
-            num_batches=50,
+            epochs=1000,
+            num_batches=1000,
             lr_preTrain=1e-4
             )
         self.env = StockTradingEnv(

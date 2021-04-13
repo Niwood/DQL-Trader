@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import random
 from pathlib import Path
 from tqdm import tqdm
-
+import pywt
 
 
 
@@ -102,7 +102,8 @@ class DataCluster:
                     )
 
         # Number of features
-        self.num_lt_features = self.collection[0].num_lt_features
+        # self.num_lt_features = self.collection[0].num_lt_features
+        self.num_lt_features = 90 #90 due to wavelet scales, see environment._make_wavelet
         self.num_st_features = self.collection[0].num_st_features
 
 
@@ -184,14 +185,17 @@ class DataPack:
         long term features requires to have "LT_" in the beginning of the name
         '''
         # SMA
-        self.df['LT_SMA40'] = self.df.ta.sma(length=40)
-        self.df['LT_SMA35'] = self.df.ta.sma(length=35)
-        self.df['LT_SMA30'] = self.df.ta.sma(length=30)
-        self.df['LT_SMA25'] = self.df.ta.sma(length=25)
-        self.df['LT_SMA20'] = self.df.ta.sma(length=20)
-        self.df['LT_SMA15'] = self.df.ta.sma(length=15)
-        self.df['LT_SMA10'] = self.df.ta.sma(length=10)
-        self.df['LT_SMA5'] = self.df.ta.sma(length=5)
+        # self.df['LT_SMA40'] = self.df.ta.sma(length=40)
+        # self.df['LT_SMA35'] = self.df.ta.sma(length=35)
+        # self.df['LT_SMA30'] = self.df.ta.sma(length=30)
+        # self.df['LT_SMA25'] = self.df.ta.sma(length=25)
+        # self.df['LT_SMA20'] = self.df.ta.sma(length=20)
+        # self.df['LT_SMA15'] = self.df.ta.sma(length=15)
+        # self.df['LT_SMA10'] = self.df.ta.sma(length=10)
+        # self.df['LT_SMA5'] = self.df.ta.sma(length=5)
+
+        # Wavelets
+        self.df['LT_close'] = self.df.close.copy()
 
 
         '''
@@ -220,7 +224,7 @@ class DataPack:
         self.num_lt_features = lt_feats
         self.num_st_features = len(self.df.columns) - lt_feats
 
-        
+
 
     def remove(self):
         ''' Remove columns '''
@@ -241,7 +245,6 @@ if __name__ == '__main__':
     
     data_cluster = DataCluster(dataset='realmix', remove_features=['close', 'high', 'low', 'open', 'volume'], num_stocks=1)
     collection = data_cluster.collection
-    print(len(collection))
 
     # for dp in collection:
     #     print(f'{dp.ticker} has {len(dp.df)}')
@@ -252,10 +255,7 @@ if __name__ == '__main__':
 
 
     df = collection[0].df
-    # df = df[0:300]
-    a = collection[0].org
-    a.triggers = list(range(len(a)))
-    print(a)
+    df = df[0:300]
 
-    # df.plot(subplots=True)
-    # plt.show()
+    df.plot(subplots=True)
+    plt.show()
