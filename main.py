@@ -29,7 +29,7 @@ from tools import safe_div
 # Environment settings
 EPISODES = 500
 MAX_STEPS = 300
-num_stocks = 5000
+num_stocks = 3000
 WAVELET_SCALES = 100 #keep
 
 # Exploration settings
@@ -39,7 +39,7 @@ MIN_EPSILON = 1e-6
 
 #  Stats settings
 AGGREGATE_STATS_EVERY = 1  #episodes
-EPOCH_SIZE = 10
+EPOCH_SIZE = 20
 
 
 
@@ -68,7 +68,7 @@ class Trader:
         self.agent.pre_train(
             self.collection,
             epochs=500,
-            sample_size=6_000,
+            sample_size=10_000,
             lr_preTrain=1e-3
             )
         self.env = StockTradingEnv(
@@ -282,7 +282,9 @@ class Trader:
             dataset=self.dataset,
             remove_features=['close', 'high', 'low', 'open', 'volume'],
             num_stocks=1,
-            verbose=False
+            verbose=False,
+            wavelet_scales=WAVELET_SCALES,
+            num_time_steps=self.num_time_steps
             )
         collection = data_cluster.collection
         
@@ -291,6 +293,7 @@ class Trader:
             collection=collection,
             num_st_features=data_cluster.num_st_features,
             num_lt_features=data_cluster.num_lt_features,
+            wavelet_scales = WAVELET_SCALES,
             num_time_steps = self.num_time_steps
             )
         ma.astats = self.astats.loc[episode]

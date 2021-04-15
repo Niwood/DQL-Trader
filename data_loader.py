@@ -234,10 +234,18 @@ class DataPack:
         # coef: (scales, time_steps)
         scales = np.arange(1, self.wavelet_scales+1)
         out = np.zeros(shape=(len(scales), self.num_time_steps, len(signals.columns)))
+        
         for idx, col in enumerate(signals.columns):
             signal = signals[col].diff().fillna(0).to_numpy()
             coef, _ = pywt.cwt(signal, scales, wavelet='gaus8') #gaus8 seems to give high res
-            out[:, 0:coef.shape[1], idx] = abs(coef)
+            
+            try:
+                out[:, 0:coef.shape[1], idx] = abs(coef)
+            except Exception as e:
+                print(e)
+                print('->>', coef.shape, idx)
+                print('->>', out.shape)
+                quit()
         return out #(scales, time_steps, num_LT_features)
 
 
