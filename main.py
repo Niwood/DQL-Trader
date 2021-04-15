@@ -30,6 +30,7 @@ from tools import safe_div
 EPISODES = 500
 MAX_STEPS = 300
 num_stocks = 1000
+WAVELET_SCALES = 100
 
 # Exploration settings
 epsilon = 1
@@ -40,30 +41,36 @@ MIN_EPSILON = 1e-6
 AGGREGATE_STATS_EVERY = 1  #episodes
 EPOCH_SIZE = 10
 
-# For stats
-ep_rewards = [0]
+
 
 
 class Trader:
 
     def __init__(self):
 
+        self.num_time_steps = 300 #number of sequences that will be fed into the model
 
         self.dataset = 'realmix'
-        self.data_cluster = DataCluster(dataset=self.dataset, remove_features=['close', 'high', 'low', 'open', 'volume'], num_stocks=num_stocks)
+        self.data_cluster = DataCluster(
+            dataset=self.dataset,
+            remove_features=['close', 'high', 'low', 'open', 'volume'],
+            num_stocks=num_stocks,
+            wavelet_scales=WAVELET_SCALES,
+            num_time_steps=self.num_time_steps
+            )
         self.collection = self.data_cluster.collection
-
-        self.num_time_steps = 300 #number of sequences that will be fed into the model
+        
         self.agent = Agent(
             num_st_features=self.data_cluster.num_st_features,
             num_lt_features=self.data_cluster.num_lt_features,
+            wavelet_scales=WAVELET_SCALES,
             num_time_steps=self.num_time_steps
             )
         self.agent.pre_train(
             self.collection,
-            epochs=1000,
-            num_batches=1000,
-            lr_preTrain=1e-4
+            epochs=500,
+            sample_size=6_000,
+            lr_preTrain=1e-3
             )
         self.env = StockTradingEnv(
             self.collection,
@@ -72,10 +79,8 @@ class Trader:
             static_initial_step=0
             )
 
-
         # Epsilon
         self.epsilon_steps = [1]*epsilon_dsided_plateau + list(np.linspace(1,MIN_EPSILON,EPISODES - epsilon_dsided_plateau*2)) + [MIN_EPSILON]*(epsilon_dsided_plateau+1)
-
 
         # Statistics
         self.epsilon = epsilon
@@ -142,18 +147,17 @@ class Trader:
                 },
             'optimizer': {
                 'algorithm': K.eval(self.agent.model.optimizer._name),
-                'learning_rate': float(K.eval(self.agent.model.optimizer.lr)),
-                'decay': float(K.eval(self.agent.model.optimizer.decay))
+                'learning_rate': float(K.eval(self.agent.model.optimizer.lr))
                 },
-            # 'loss': K.eval(self.agent.model.loss.__name__),
-            # 'metrics': K.eval(self.agent.model.metrics),
-            'cost_matrix': str(self.agent.cost_matrix),
             'agent': {
                 'discount': self.agent.DISCOUNT,
                 'replay_memory_size': self.agent.REPLAY_MEMORY_SIZE,
                 'min_replay_memory_size': self.agent.MIN_REPLAY_MEMORY_SIZE,
                 'minibatch_size': self.agent.MINIBATCH_SIZE,
                 'update_target_network_every': self.agent.UPDATE_TARGET_EVERY
+                },
+            'pre_training': {
+                'conf_mat': str(self.agent.conf_mat)
                 }
             }
         with open(self.folder / 'metadata.json', 'w') as outfile:
@@ -219,9 +223,6 @@ class Trader:
                 
                 current_state = new_state
                 step += 1
-
-            # Append episode reward to a list and log stats (every given number of episodes)
-            ep_rewards.append(mean(self.episode_reward))
 
             # Save model
             if not episode % EPOCH_SIZE:

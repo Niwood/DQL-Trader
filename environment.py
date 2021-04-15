@@ -73,27 +73,15 @@ class StockTradingEnv(gym.Env):
         # Slice only LT features
         _df_LT = _df_LT[lt_feats]
         # _df_LT_obs = _df_LT.to_numpy()
-        _df_LT_obs = self._make_wavelet(_df_LT.to_numpy())
-        # print(_df_LT_obs)
-        # print(_df_LT_obs.shape), quit()
+        _df_LT_obs = self.dp.make_wavelet(_df_LT) #This row is used for wavelets, it replaces the LT features
 
         # Drop LT features from _df
         _df.drop(lt_feats, axis=1, inplace=True)
         
         # Drop conventional features
-        _df_obs = _df.drop(['close', 'high', 'low', 'open', 'volume'], axis=1).to_numpy()
+        _df_ST_obs = _df.drop(['close', 'high', 'low', 'open', 'volume'], axis=1).to_numpy()
 
-        return {'st':_df_obs, 'lt':_df_LT_obs}, target
-
-
-
-    def _make_wavelet(self, signal):
-        # signal: (time_steps,)
-        # coef: (scales, time_steps)
-        signal = signal.reshape(signal.shape[0],)
-        scales = np.arange(1, 91)
-        coef, _ = pywt.cwt(signal, scales, wavelet='morl')
-        return np.transpose(abs(coef))
+        return {'st':_df_ST_obs, 'lt':_df_LT_obs}, target
 
 
     def _specific_slice(self, _df, requested_target=0):
@@ -101,14 +89,24 @@ class StockTradingEnv(gym.Env):
         # a Locally Weighted Scatterplot Smoothing on the close column to determine local max/min
 
         # Lowess and lowess grad
-        _df['lowess'] = low(_df.close, _df.index, frac=0.1)[:, 1]
-        _df['lowess_grad'] = low(np.gradient(_df.lowess), _df.index, frac=0.1)[:, 1]
+        _df['lowess'] = low(_df.close, _df.index, frac=0.05)[:, 1]
+        _df['lowess_grad'] = low(np.gradient(_df.lowess), _df.index, frac=0.01)[:, 1]
+        _df_lowess_2grad = low(np.gradient(_df.lowess_grad), _df.index, frac=0.01)[:, 1]
+        _df_lowess_grad = _df['lowess_grad'].copy()
+        self.df_target = _df.copy()
+        
 
         # Detect sign change
         _df.lowess_grad = np.sign(_df.lowess_grad)
         _df.lowess_grad = (_df.lowess_grad.shift(periods=1) - _df.lowess_grad)/2
         _df.lowess_grad.fillna(0, inplace=True)
-
+        
+        # Set detected peaks/valleys to 0 if they are outside a quantile
+        qnt = 0.05
+        _df.lowess_grad = _df.lowess_grad * ((_df_lowess_2grad > np.quantile(_df_lowess_2grad, 1-qnt)) | (_df_lowess_2grad < np.quantile(_df_lowess_2grad, qnt)))
+        # print(a)
+        # quit()
+    
         # Build target stack: [ [1,0,0], [1,0,0], [0,1,0], ... ]
         target = np.dstack((
             ((_df.lowess_grad == 0) * 1).to_numpy(),
@@ -118,6 +116,10 @@ class StockTradingEnv(gym.Env):
 
         # Get index of requested target
         _target = np.array([np.argmax(i) for i in target])
+        self.df_target['_df_lowess_2grad'] = _df_lowess_2grad
+        self.df_target['target'] = _target
+        self.df_target = self.df_target[['close', 'target', 'lowess', 'lowess_grad']]
+
         try:
             selected_target_idx = np.random.choice(np.where(_target == requested_target)[0]) #Take a random choice
         except:
@@ -129,7 +131,7 @@ class StockTradingEnv(gym.Env):
             except:
                 requested_target = 0
                 selected_target_idx = np.random.choice(np.where(_target == requested_target)[0])
-                print(f'--- Could not find target: 1 or 2 - switched to {requested_target} instead')
+                # print(f'--- Could not find target: 1 or 2 - switched to {requested_target} instead')
 
         selected_df_idx = _df.index[selected_target_idx] #Get the df index
 
@@ -251,7 +253,7 @@ class StockTradingEnv(gym.Env):
         # To generate initial step
         if self.static_initial_step == 0:
             self.current_step = random.randint(
-                self.LOOK_BACK_WINDOW+60, len(self.df.loc[:, 'open'].values)-60
+                self.LOOK_BACK_WINDOW, len(self.df.loc[:, 'open'].values)-self.max_steps
                 )
         else:
             self.current_step = self.static_initial_step + self.LOOK_BACK_WINDOW + 2
@@ -337,16 +339,22 @@ if __name__ == '__main__':
     # DUMMY DATA
     # df = get_dummy_data()
     
-    
-    data_cluster = DataCluster(dataset='realmix', remove_features=['close', 'high', 'low', 'open', 'volume'], num_stocks=1)
+    wavelet_scales = 100
+    num_time_Steps = 120
+    data_cluster = DataCluster(
+        dataset='realmix',
+        remove_features=['close', 'high', 'low', 'open', 'volume'],
+        num_stocks=1,
+        wavelet_scales=wavelet_scales,
+        num_time_steps=num_time_Steps
+        )
     collection = data_cluster.collection
 
-    env = StockTradingEnv(collection, look_back_window=90, static_initial_step=0, generate_est_targets=True)
+    env = StockTradingEnv(collection, look_back_window=num_time_Steps, static_initial_step=0, generate_est_targets=True)
     env.requested_target = 1
     obs = env.reset()
-    print(obs)
 
-    quit()
+
     env.step(1)
     
     for i in range(10):

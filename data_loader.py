@@ -18,13 +18,13 @@ class DataCluster:
     Contains a collection of data packs
     '''
 
-    def __init__(self, dataset=None, remove_features=False, num_stocks=1, verbose=True):
+    def __init__(self, dataset=None, remove_features=False, num_stocks=1, wavelet_scales=100, num_time_steps=0 , verbose=True):
 
         self.collection = list()
 
         if dataset == 'google':
             self.collection.append(
-                DataPack(dataframe=GOOG, remove_features=remove_features)
+                DataPack(dataframe=GOOG, remove_features=remove_features, wavelet_scales=wavelet_scales, num_time_steps=num_time_steps)
                 )
 
         elif dataset == 'sine':
@@ -37,7 +37,7 @@ class DataCluster:
             df.Low = price * 0.996
             df.Volume *= df.Close
             self.collection.append(
-                DataPack(dataframe=df, remove_features=remove_features)
+                DataPack(dataframe=df, remove_features=remove_features, wavelet_scales=wavelet_scales, num_time_steps=num_time_steps)
                 )
 
         elif dataset == 'random':
@@ -52,7 +52,7 @@ class DataCluster:
             df.Low = price * 0.996
             df.Volume *= df.Close
             self.collection.append(
-                DataPack(dataframe=df, remove_features=remove_features)
+                DataPack(dataframe=df, remove_features=remove_features, wavelet_scales=wavelet_scales, num_time_steps=num_time_steps)
                 )
 
         elif dataset == 'realmix':
@@ -98,12 +98,12 @@ class DataCluster:
                 df.index = pd.to_datetime(df.index)
                     
                 self.collection.append(
-                    DataPack(dataframe=df, ticker=_file, remove_features=remove_features)
+                    DataPack(dataframe=df, ticker=_file, remove_features=remove_features, num_time_steps=num_time_steps, wavelet_scales=wavelet_scales)
                     )
 
         # Number of features
-        # self.num_lt_features = self.collection[0].num_lt_features
-        self.num_lt_features = 90 #90 due to wavelet scales, see environment._make_wavelet
+        self.num_lt_features = self.collection[0].num_lt_features
+        # self.num_lt_features = 100 #Due to wavelet scales, see environment._make_wavelet
         self.num_st_features = self.collection[0].num_st_features
 
 
@@ -114,11 +114,13 @@ class DataPack:
     Performes a process of the data incl scaling and feature extraction
     '''
 
-    def __init__(self, dataframe=None, ticker=None, remove_features=False):
+    def __init__(self, dataframe=None, ticker=None, remove_features=False, num_time_steps=0, wavelet_scales=0):
 
         # Parameters
         self.remove_features = remove_features
         self.ticker = ticker
+        self.wavelet_scales = wavelet_scales
+        self.num_time_steps = num_time_steps
 
         # Save original data
         # self.org = dataframe.Close.copy()
@@ -154,11 +156,12 @@ class DataPack:
         self.df['MACD'] = self.df.ta.macd(fast=20, slow=40).MACDh_20_40_9
         
         # RSI signal
-        rsi_high = 80
-        rsi_low = 20
         rsi = self.df.ta.rsi()
-        self.df['RSI_high'] = rsi * (rsi>rsi_high)
-        self.df['RSI_low'] = rsi * (rsi<rsi_low)
+        self.df['RSI'] = rsi
+        # rsi_high = 80
+        # rsi_low = 20
+        # self.df['RSI_high'] = rsi * (rsi>rsi_high)
+        # self.df['RSI_low'] = rsi * (rsi<rsi_low)
 
         # TRIX signal
         self.df['TRIX'] = self.df.ta.trix(length=28).TRIXs_28_9
@@ -167,7 +170,7 @@ class DataPack:
         length = 30
         bband = self.df.ta.bbands(length=length)
         bband['hlc'] = self.df.ta.hlc3()
-
+        
         # Bollinger band upper signal
         bbu_signal = bband['hlc'] - bband['BBM_'+str(length)+'_2.0']
         bband['BBU_signal'] = (abs(bbu_signal) * (bbu_signal > 0) / bband['BBU_'+str(length)+'_2.0'])
@@ -175,7 +178,7 @@ class DataPack:
         # Bollinger band lower signal
         bbl_signal = bband['BBM_'+str(length)+'_2.0'] - bband['hlc']
         bband['BBL_signal'] = (abs(bbl_signal) * (bbl_signal > 0)  / bband['BBL_'+str(length)+'_2.0'])
-
+        
         self.df['BBU_signal'] = bband.BBU_signal
         self.df['BBL_signal'] = bband.BBL_signal
 
@@ -196,6 +199,7 @@ class DataPack:
 
         # Wavelets
         self.df['LT_close'] = self.df.close.copy()
+        self.df['LT_RSI'] = self.df.RSI.copy()
 
 
         '''
@@ -225,6 +229,17 @@ class DataPack:
         self.num_st_features = len(self.df.columns) - lt_feats
 
 
+    def make_wavelet(self, signals):
+        # signal: (time_steps,)
+        # coef: (scales, time_steps)
+        scales = np.arange(1, self.wavelet_scales+1)
+        out = np.zeros(shape=(len(scales), self.num_time_steps, len(signals.columns)))
+        for idx, col in enumerate(signals.columns):
+            signal = signals[col].diff().fillna(0).to_numpy()
+            coef, _ = pywt.cwt(signal, scales, wavelet='gaus8') #gaus8 seems to give high res
+            out[:, 0:coef.shape[1], idx] = abs(coef)
+        return out #(scales, time_steps, num_LT_features)
+
 
     def remove(self):
         ''' Remove columns '''
@@ -243,7 +258,12 @@ class DataPack:
 
 if __name__ == '__main__':
     
-    data_cluster = DataCluster(dataset='realmix', remove_features=['close', 'high', 'low', 'open', 'volume'], num_stocks=1)
+    data_cluster = DataCluster(
+        dataset='realmix',
+        remove_features=['close', 'high', 'low', 'open', 'volume'],
+        num_stocks=1,
+        num_time_steps=100
+        )
     collection = data_cluster.collection
 
     # for dp in collection:
@@ -255,7 +275,8 @@ if __name__ == '__main__':
 
 
     df = collection[0].df
-    df = df[0:300]
+    
+    # df = df[0:300]
 
-    df.plot(subplots=True)
-    plt.show()
+    # df.plot(subplots=True)
+    # plt.show()

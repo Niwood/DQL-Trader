@@ -65,6 +65,9 @@ class App:
         all_model_date.reverse()
         self.model_date = st.sidebar.selectbox("Model", all_model_date)
         self.model_id = int(datetime.timestamp(self.model_date))
+        
+        # Individual simulations
+        self.sims = [x.stem for x in (self.models_folder / str(self.model_id)).glob('sim*')]
 
         # Moving average window
         self.ma_window = st.sidebar.slider('Moving average', 1, 100, 10)
@@ -410,9 +413,21 @@ class App:
         fig.update_layout(template="plotly_white")
         assessment_statistics.plotly_chart(fig, use_container_width=True)
 
+        # INDIVIDUAL SIMULATIONS - ASSESSMENT
+
+        sim = assessment_statistics.selectbox("Simulation", self.sims) + '.pkl'
+        df_sim = pd.read_pickle(self.models_folder / str(self.model_id) / sim)
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df_sim.index, y=df_sim.trigger,
+                            mode='markers',
+                            name='markers'))
+        fig.update_layout(template="plotly_white")
+        assessment_statistics.plotly_chart(fig, use_container_width=True)
+        
         #### Assessment table
-        assessment_table = st.beta_expander('Assessment table')
-        assessment_table.table(astats)
+        # assessment_table = st.beta_expander('Assessment table')
+        # assessment_table.table(astats)
 
 
 if __name__ == '__main__':

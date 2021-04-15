@@ -7,14 +7,17 @@ from keras.layers.core import Dense, Dropout, Activation
 from keras.optimizers import RMSprop, Adam, SGD
 from keras.losses import SparseCategoricalCrossentropy, CategoricalCrossentropy
 from keras.layers.merge import concatenate
-from keras.layers import Flatten, BatchNormalization
-from keras.layers.convolutional import Conv1D
-from keras.layers.convolutional import MaxPooling1D
+from keras.layers import Flatten, BatchNormalization, Concatenate
+from keras.layers.convolutional import Conv1D, Conv2D
+from keras.layers.convolutional import MaxPooling1D, MaxPooling2D
 from keras.models import Model
+from sklearn.metrics import confusion_matrix
+
 from tensorflow.keras.metrics import AUC
 import tensorflow.keras.backend as K
+from keras.callbacks import EarlyStopping
 
-
+import matplotlib.pyplot as plt
 import numpy as np
 import time
 from collections import deque
@@ -22,6 +25,7 @@ from tools import ModifiedTensorBoard
 import random
 from statsmodels.nonparametric.smoothers_lowess import lowess as low
 from tqdm import tqdm
+from statistics import mean
 
 import tensorflow as tf
 physical_devices = tf.config.list_physical_devices('GPU') 
@@ -35,6 +39,7 @@ class Agent:
         self,
         num_st_features=None,
         num_lt_features=None,
+        wavelet_scales=0,
         num_time_steps=None
         ):
 
@@ -48,12 +53,13 @@ class Agent:
         # Main model - gets trained every step
         self.num_st_features = num_st_features
         self.num_lt_features = num_lt_features
+        self.wavelet_scales = wavelet_scales
         self.num_time_steps = num_time_steps
         self.model = self._create_model()
 
         # Save initial model weights
-        self.initial_model_weights = np.array([i.numpy().sum() for i in self.model.trainable_weights])
-
+        self.initial_model_weights = np.array(self.model.get_weights()).ravel()
+        
         # Target model this is what we .predict against every step
         self.target_model = self._create_model()
         self.target_model.set_weights(self.model.get_weights())
@@ -63,10 +69,11 @@ class Agent:
         self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/log-{1}")
         self.target_update_counter = 0
         self.elapsed = 0
+        self.conf_mat = np.array([])
 
 
     def _create_model(self):
-
+        
         ''' SHORT TERM HEAD '''
         st_head = Input(shape=(self.num_time_steps, self.num_st_features))
         # st = Dropout(0.3)(st_head)
@@ -78,46 +85,46 @@ class Agent:
         st = Conv1D(filters=12, kernel_size=2, padding='same', activation='relu')(st)
         st = MaxPooling1D(pool_size=6, padding='same')(st)
 
+        st = Flatten()(st)
+        st = Dense(12)(st)
 
         ''' LONG TERM HEAD '''
-        lt_head = Input(shape=(self.num_time_steps, self.num_lt_features))
-        # lt = Dropout(0.3)(lt_head)
+        lt_head = Input(shape=(self.wavelet_scales, self.num_time_steps, self.num_lt_features))
 
-        lt = Conv1D(filters=12, kernel_size=2, padding='same', activation='relu')(lt_head)
-        lt = MaxPooling1D(pool_size=6, padding='same')(lt)
+        lt = Conv2D(filters=24, kernel_size=2, padding='same', activation='relu')(lt_head)
+        lt = MaxPooling2D(pool_size=6, padding='same')(lt)
+
+        lt = Conv2D(filters=24, kernel_size=2, padding='same', activation='relu')(lt)
+        lt = MaxPooling2D(pool_size=6, padding='same')(lt)
+
+        lt = Conv2D(filters=12, kernel_size=2, padding='same', activation='relu')(lt)
+        lt = MaxPooling2D(pool_size=6, padding='same')(lt)
+
+        lt = Conv2D(filters=12, kernel_size=2, padding='same', activation='relu')(lt)
+        lt = MaxPooling2D(pool_size=6, padding='same')(lt)
         # lt = BatchNormalization()(lt)
+        lt = Flatten()(lt)
+        lt = Dense(12)(lt)
 
-        lt = Conv1D(filters=12, kernel_size=2, padding='same', activation='relu')(lt)
-        lt = MaxPooling1D(pool_size=6, padding='same')(lt)
-
-
+        
         ''' MERGED TAIL '''
-        tail = concatenate([st, lt])
-        tail = Conv1D(filters=12, kernel_size=2, padding='same', activation='relu')(tail)
-        tail = MaxPooling1D(pool_size=6, padding='same')(tail)
-
-        tail = Flatten()(tail)
-
-        tail = Dense(16)(tail)
+        tail = Concatenate()([st, lt])
+        
+        tail = Dense(12)(tail)
         tail = Dropout(0.2)(tail)
 
-        # tail = Dense(8)(tail)
-        # tail = Dropout(0.2)(tail)
+        tail = Dense(8)(tail)
+        tail = Dropout(0.2)(tail)
+
+        tail = Dense(6)(tail)
 
         ''' MULTI OUTPUTS '''
         action_prediction = Dense(3, activation='softmax')(tail)
-
+        
         # Compile model
         model = Model(inputs=[st_head, lt_head], outputs=action_prediction)
-        # initial_learning_rate = 0.1
-        # lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-        #     initial_learning_rate,
-        #     decay_steps=100000,
-        #     decay_rate=0.96)
-        # opt = SGD(learning_rate=0.1, decay=0.01, momentum=0.99)
 
-        # opt = RMSprop(learning_rate=1e-3, momentum=0.95, epsilon=0.01, decay=0.96)
-        opt = Adam(learning_rate=1e-7)
+        opt = Adam(learning_rate=1e-6)
 
         # Cost of missclassification
         self.cost_matrix = np.ones((3,3))
@@ -137,61 +144,94 @@ class Agent:
 
 
     def compare_initial_weights(self):
-        return self.initial_model_weights - np.array([i.numpy().sum() for i in self.model.trainable_weights])
+        model_weights = np.array(self.model.get_weights()).ravel()
+        b = list()
+        for _we1, _we2 in zip(self.initial_model_weights, model_weights):
+            a = np.square(np.subtract(_we1,_we2)).mean()
+            if a>0: b.append(a) #zero if no bias
+
+        return mean(b)
 
 
-    def pre_train(self, collection, epochs=500, num_batches=500, lr_preTrain=1e-5):
+    def pre_train(self, collection, epochs=500, sample_size=500, train_ratio=0.8, lr_preTrain=1e-4):
         from environment import StockTradingEnv
 
         # Save default lr and sub the new one for pre-training
         _lr = K.eval(self.model.optimizer.lr)
+        lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+            lr_preTrain,
+            decay_steps=100000,
+            decay_rate=0.99)
         self.model.optimizer.lr = lr_preTrain
 
         # Init env for pre-train
         _env = StockTradingEnv(collection, look_back_window=self.num_time_steps, generate_est_targets=True)
 
         # Sample from env for balanced a target set
-        batch_loader = {'lt':list(), 'st':list(), 'target':list()}
-        _num_sub_batches = int(num_batches/3)
+        batch_loader_train = {'lt':list(), 'st':list(), 'target':list()}
+        batch_loader_test = {'lt':list(), 'st':list(), 'target':list()}
+        sample_size = int(sample_size/3)
+        train_size = int(sample_size * train_ratio)
+        
 
         for requested_target in range(3): #3 for each action
-            for _ in tqdm(range(_num_sub_batches), desc=f'Generating pre-training batches for action {requested_target}'):
+            for k in tqdm(range(sample_size), desc=f'Generating pre-training samples with target {requested_target}'):
                 _env.requested_target = requested_target #Specify the requested action for in which the env will find a dataset for
                 state, target = _env.reset()
+                # _env.df_target.plot(subplots=True)
+                # plt.show()
+                # quit()
                 
-                if (state['st'].shape[0], state['lt'].shape[0]) != (self.num_time_steps, self.num_time_steps):
-                    # print((state['st'].shape[0], state['lt'].shape[0]),  state['lt'].shape, (self.num_time_steps, self.num_time_steps))
+                if (state['st'].shape[0], state['lt'].shape[1]) != (self.num_time_steps, self.num_time_steps):
                     continue #This happens when there is not enough data left of the dataframe at the sampled action
-                batch_loader['st'].append(state['st'])
-                batch_loader['lt'].append(state['lt'])
-                batch_loader['target'].append(target)
+                
+                if k < train_size:
+                    loader = batch_loader_train
+                else:
+                    loader = batch_loader_test
 
+                loader['st'].append(state['st'])
+                loader['lt'].append(state['lt'])
+                loader['target'].append(target)
 
+        a = [np.argmax(i) for i in batch_loader_train['target']]
+        print('TRAIN HOLD',a.count(0))
+        print('TRAIN BUY',a.count(1))
+        print('TRAIN SELL',a.count(2))
+        a = [np.argmax(i) for i in batch_loader_test['target']]
+        print('TEST HOLD',a.count(0))
+        print('TEST BUY',a.count(1))
+        print('TEST SELL',a.count(2))
 
-        a = [np.argmax(i) for i in batch_loader['target']]
-        print('HOLD',a.count(0))
-        print('BUY',a.count(1))
-        print('SELL',a.count(2))
 
         ### Train
-        st = np.array(batch_loader['st'])
-        lt = np.array(batch_loader['lt'])
-        yhat = np.array(batch_loader['target'])
+        st_train = np.array(batch_loader_train['st'])
+        lt_train = np.array(batch_loader_train['lt'])
+        y_train = np.array(batch_loader_train['target'])
         self.model.fit(
-            [st, lt], yhat,
+            [st_train, lt_train], y_train,
             batch_size=16,
             shuffle=True,
             epochs=epochs
             )
         
+        # Evaluation
+        st_test = np.array(batch_loader_test['st'])
+        lt_test = np.array(batch_loader_test['lt'])
+        y_test = np.argmax(np.array(batch_loader_test['target']), axis=1)
+        y_hat = np.argmax(self.model.predict([st_test, lt_test]), axis=1)
+
+        # Confusion matrix
+        self.conf_mat = confusion_matrix(y_test,y_hat)
+
         # Switch back to default lr
         self.model.optimizer.lr = _lr
 
-        # Update target model weisghts
+        # Update target model weights
         self.target_model.set_weights(self.model.get_weights())
 
         # Clean memory
-        del batch_loader, _env, st, lt, yhat
+        del batch_loader_test, batch_loader_train, _env, st_test, lt_test, y_test, y_hat, st_train, lt_train, y_train
 
 
     def update_replay_memory(self, transition):
@@ -355,18 +395,29 @@ if __name__ == '__main__':
     from sklearn.preprocessing import MinMaxScaler
     import pandas_ta as ta
 
-    dc = DataCluster(dataset='realmix', remove_features=['close', 'high', 'low', 'open', 'volume'])
+    wavelet_scales = 100
+    num_steps = 300
+    dc = DataCluster(
+        dataset='realmix',
+        remove_features=['close', 'high', 'low', 'open', 'volume'],
+        num_stocks=1000,
+        wavelet_scales=wavelet_scales,
+        num_time_steps=num_steps
+        )
     collection = dc.collection
 
-    num_steps = 200
     env = StockTradingEnv(collection, look_back_window=num_steps)
+    
     agent = Agent(
         num_st_features=dc.num_st_features,
         num_lt_features=dc.num_lt_features,
+        wavelet_scales=wavelet_scales,
         num_time_steps=num_steps)
-    
-    agent.pre_train(collection, epochs=500, num_batches=100, lr_preTrain=1e-4)
+
+    agent.pre_train(collection, epochs=200, sample_size=3000, lr_preTrain=1e-3)
     print(f' compare_initial_weights: {agent.compare_initial_weights()}')
+    print(agent.conf_mat)
+    quit()
 
 
     ma = ModelAssessment(

@@ -125,6 +125,7 @@ class ModelAssessment:
         self.ticker = self.env.ticker
         self.actions = list()
         self.rewards = list()
+        self.prices = list()
         self.sim = self.env.dp.org
         self.sim['trigger'] = 0
 
@@ -144,7 +145,7 @@ class ModelAssessment:
             action = np.argmax(action)
             self.actions.append(action)
             self.rewards.append(reward)
-
+            self.prices.append(self.env.current_price)
             
             if action in (1, 2):
                 self.sim.trigger.loc[self.env.current_date]
@@ -175,20 +176,27 @@ class ModelAssessment:
 
 
 if __name__ == '__main__':
-    dc = DataCluster(dataset='google', remove_features=['close', 'high', 'low', 'open', 'volume'])
+    import matplotlib.pyplot as plt
+    dc = DataCluster(dataset='realmix', remove_features=['close', 'high', 'low', 'open', 'volume'])
     collection = dc.collection
     
-    model_name = 'models/1618158837/1618158837_EPS1of20.model'
+    model_name = 'models/1618413178/1618416360_EPS80of500.model'
     ma = ModelAssessment(
         collection=collection,
         num_st_features=dc.num_st_features,
         num_lt_features=dc.num_lt_features,
-        num_time_steps=90
+        num_time_steps=300
         )
     ma.load_model(model_name=model_name)
     ma.sim_range = 100
     ma.simulate()
 
     print(ma.sim)
+    print(ma.actions)
+    print(ma.prices)
+
+    df = pd.DataFrame(data={'price':ma.prices ,'action':ma.actions})
+    df.plot(subplots=True)
+    plt.show()
 
     print('=== EOL ===')

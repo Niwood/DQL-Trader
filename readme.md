@@ -1,14 +1,24 @@
 # Deep Q Learning Trader
 
-Deep Q learning for trading ..
+Deep Q learning for trading
 
 ### Credit
 - StockTradingEnvironment
+- 
 
 
 ### TODO
-- confusion matrix for pre-training and save
-- visualize weights during training
+- [x] Confusion matrix for pre-training and save
+- [ ] Visualize weights during training
+- [ ] Model description
+- [ ] 2D convNet for wavelets
+
+
+- RMSProp doesn't work, recall is stagnating below 1%.
+- Conf matrix done
+- Difficult to vis the model weights, figured to just calculate RMSE instead <-Yes
+- 
+
 
 
 ### Usage
@@ -20,7 +30,8 @@ TBD
 ### Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
 
-Please make sure to update tests as appropriate.
 
 ### License
 [MIT](https://choosealicense.com/licenses/mit/)
+
+### Further Reading
