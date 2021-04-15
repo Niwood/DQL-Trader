@@ -29,8 +29,8 @@ from tools import safe_div
 # Environment settings
 EPISODES = 500
 MAX_STEPS = 300
-num_stocks = 1000
-WAVELET_SCALES = 100
+num_stocks = 5000
+WAVELET_SCALES = 100 #keep
 
 # Exploration settings
 epsilon = 1
@@ -43,12 +43,11 @@ EPOCH_SIZE = 10
 
 
 
-
 class Trader:
 
     def __init__(self):
 
-        self.num_time_steps = 300 #number of sequences that will be fed into the model
+        self.num_time_steps = 300 #keep - number of sequences that will be fed into the model
 
         self.dataset = 'realmix'
         self.data_cluster = DataCluster(

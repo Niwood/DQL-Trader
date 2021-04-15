@@ -77,6 +77,7 @@ class ModelAssessment:
         num_st_features=None,
         num_lt_features=None,
         num_time_steps=None,
+        wavelet_scales=0,
         sim_range=300
         ):
         
@@ -84,6 +85,7 @@ class ModelAssessment:
         self.num_st_features = num_st_features
         self.num_lt_features = num_lt_features
         self.num_time_steps = num_time_steps
+        self.wavelet_scales = wavelet_scales
         self.sim_range = sim_range
         self.astats = pd.DataFrame()
         self.model = None
@@ -132,7 +134,7 @@ class ModelAssessment:
 
         for _ in tqdm(range(self.sim_range), desc=f'Model assessment on {self.ticker}'):
             _obs_st = obs['st'].reshape((1, self.num_time_steps, self.num_st_features))
-            _obs_lt = obs['lt'].reshape((1, self.num_time_steps, self.num_lt_features))
+            _obs_lt = obs['lt'].reshape((1, self.wavelet_scales, self.num_time_steps, self.num_lt_features))
             action = self.model.predict([_obs_st, _obs_lt])
 
             if np.isnan(np.sum(action)):
@@ -177,15 +179,25 @@ class ModelAssessment:
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
-    dc = DataCluster(dataset='realmix', remove_features=['close', 'high', 'low', 'open', 'volume'])
+
+    num_steps = 300
+    wavelet_scales = 100
+
+    dc = DataCluster(
+        dataset='realmix',
+        remove_features=['close', 'high', 'low', 'open', 'volume'],
+        wavelet_scales=wavelet_scales,
+        num_time_steps=num_steps
+        )
     collection = dc.collection
     
-    model_name = 'models/1618413178/1618416360_EPS80of500.model'
+    model_name = 'models/1618510946/1618511005_EPS10of500.model'
     ma = ModelAssessment(
         collection=collection,
         num_st_features=dc.num_st_features,
         num_lt_features=dc.num_lt_features,
-        num_time_steps=300
+        num_time_steps=num_steps,
+        wavelet_scales=wavelet_scales
         )
     ma.load_model(model_name=model_name)
     ma.sim_range = 100
