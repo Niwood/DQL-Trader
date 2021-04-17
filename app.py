@@ -15,7 +15,6 @@ warnings.filterwarnings('ignore')
 
 
 import numpy as np
-from bokeh.plotting import figure
 import plotly.figure_factory as ff
 import plotly.express as px
 import plotly.graph_objects as go
