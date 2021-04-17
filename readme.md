@@ -1,7 +1,7 @@
 # Deep Q Learning Trader
 
 
-## Summary
+### Summary
 Multi classification network trained as a two-headed 1D/2D ConvNet to be used as a recommender system for trade positions. The model uses Keras DNN framework and the StockTradingEnvironment is built on the superclass GYM from OpenAI. The features consistst of various technical indicators (RSI, Bollinger Band, TRIX, MACD) for the 1D ConvNet and a frequency decomposition spectrum using continuous wavelet transform (to retain the time domain of the frequency spectrum) using the real-valued Gaussian wavelet for the 2D ConvNet.
 
 First, the network is pre-trained via supervised learning with target actions (buy/sell/hold) determined by Locally Weighted Scatterplot Smoothing (LOWESS) on the close value. The second and third gradient of LOWESS will reveal local max/min points, thresholding the extreme points above/below the q% quantile to only keep the most significant points.
@@ -12,14 +12,13 @@ For each epoch (containing a certain amount of episodes) the model will be saved
 
 There is also an Streamlit application built for evaluating the model.
 
-### Further Reading
 
 ---
-## Credit
+### Credit
 - StockTradingEnvironment
 ..
 
-## TODO
+### TODO
 - [x] Confusion matrix for pre-training and save
 - [ ] Visualize weights during training
 - [ ] Setup tests
@@ -29,14 +28,14 @@ There is also an Streamlit application built for evaluating the model.
 - [ ] Low utilization of the GPU... Whyyy
 
 
-## Installation
+### Installation
 
 ```python
 #pip install -r requirements.txt
 ```
 
 
-## Usage
+### Usage
 
 ```python
 TBD
@@ -47,10 +46,11 @@ Streamlit application
 streamlit run app.py
 ```
 
-## Contributing
+### Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
 
 
-## License
+### License
 [MIT](https://choosealicense.com/licenses/mit/)
 
+### Further Reading

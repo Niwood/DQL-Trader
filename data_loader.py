@@ -58,8 +58,8 @@ class DataCluster:
         elif dataset == 'realmix':
 
             # Specify the dir
-            data_folder = Path.cwd() / 'data'
-            all_files = [x.stem for x in data_folder.glob('*/')]
+            stock_folder = Path.cwd() / 'data' / 'stock'
+            all_files = [x.stem for x in stock_folder.glob('*/')]
 
             # Sample
             iterator = range(len(all_files)) if num_stocks==0 else range(num_stocks)
@@ -81,8 +81,8 @@ class DataCluster:
 
                     # Resample when the file is empty or unreadable
                     try:
-                        df = pd.read_csv(f'data/{_file}.txt', delimiter = ",")
-                    except: continue 
+                        df = pd.read_csv(f'data/stock/{_file}.txt', delimiter = ",")
+                    except: continue
 
                     # Resample for small dataframes
                     if len(df) < 500:
@@ -288,3 +288,13 @@ if __name__ == '__main__':
 
     # df.plot(subplots=True)
     # plt.show()
+
+
+    # def make_data():
+    #     data_cluster = DataCluster(
+    #         dataset='realmix',
+    #         remove_features=['close', 'high', 'low', 'open', 'volume'],
+    #         num_stocks=0,
+    #         num_time_steps=300
+    #         )
+    #     collection = data_cluster.collection

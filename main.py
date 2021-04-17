@@ -29,7 +29,7 @@ from tools import safe_div
 # Environment settings
 EPISODES = 500
 MAX_STEPS = 300
-num_stocks = 3000
+num_stocks = 10
 WAVELET_SCALES = 100 #keep
 
 # Exploration settings
@@ -65,12 +65,13 @@ class Trader:
             wavelet_scales=WAVELET_SCALES,
             num_time_steps=self.num_time_steps
             )
-        self.agent.pre_train(
-            self.collection,
-            epochs=500,
-            sample_size=10_000,
-            lr_preTrain=1e-3
-            )
+        # self.agent.pre_train(
+        #     self.collection,
+        #     cached_data=True,
+        #     epochs=40,
+        #     sample_size=30_000,
+        #     lr_preTrain=1e-3
+        #     )
         self.env = StockTradingEnv(
             self.collection,
             look_back_window=self.num_time_steps,
