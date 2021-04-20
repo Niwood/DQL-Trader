@@ -27,20 +27,19 @@ from tools import safe_div
 
 
 # Environment settings
-EPISODES = 500
-MAX_STEPS = 300
-num_stocks = 10
-WAVELET_SCALES = 100 #keep
+EPISODES = 800
+MAX_STEPS = 300 #Max steps taken by the env until the episode ends
+num_stocks = 100
+WAVELET_SCALES = 100 #keep - number of frequecys used the wavelet transform
 
 # Exploration settings
 epsilon = 1
-epsilon_dsided_plateau = 10
+epsilon_plateau = 0.1
 MIN_EPSILON = 1e-6
 
 #  Stats settings
-AGGREGATE_STATS_EVERY = 1  #episodes
-EPOCH_SIZE = 20
-
+AGGREGATE_STATS_EVERY = 1  #keep - episodes
+EPOCH_SIZE = 10
 
 
 class Trader:
@@ -49,6 +48,7 @@ class Trader:
 
         self.num_time_steps = 300 #keep - number of sequences that will be fed into the model
 
+        # Data cluster
         self.dataset = 'realmix'
         self.data_cluster = DataCluster(
             dataset=self.dataset,
@@ -59,7 +59,10 @@ class Trader:
             )
         self.collection = self.data_cluster.collection
         
+        # Agent
         self.agent = Agent(
+            st_shape=self.data_cluster.get_st_shape(),
+            lt_shape=self.data_cluster.get_lt_shape(),
             num_st_features=self.data_cluster.num_st_features,
             num_lt_features=self.data_cluster.num_lt_features,
             wavelet_scales=WAVELET_SCALES,
@@ -68,10 +71,12 @@ class Trader:
         # self.agent.pre_train(
         #     self.collection,
         #     cached_data=True,
-        #     epochs=40,
+        #     epochs=20,
         #     sample_size=30_000,
         #     lr_preTrain=1e-3
         #     )
+
+        # Environment
         self.env = StockTradingEnv(
             self.collection,
             look_back_window=self.num_time_steps,
@@ -80,7 +85,10 @@ class Trader:
             )
 
         # Epsilon
-        self.epsilon_steps = [1]*epsilon_dsided_plateau + list(np.linspace(1,MIN_EPSILON,EPISODES - epsilon_dsided_plateau*2)) + [MIN_EPSILON]*(epsilon_dsided_plateau+1)
+        self.epsilon_steps = \
+            [1.0] * int(EPISODES * epsilon_plateau) + \
+            list(np.linspace(1,MIN_EPSILON,EPISODES - int(EPISODES * epsilon_plateau)*2+1)) + \
+            [MIN_EPSILON] * int(EPISODES * epsilon_plateau)
 
         # Statistics
         self.epsilon = epsilon
@@ -106,9 +114,10 @@ class Trader:
             columns=stats)
         self.estats.index.name = 'Episode'
 
+        astats_index = np.append( np.array([1]) , np.arange(0, EPISODES+1, EPOCH_SIZE)[1::] )
         self.astats = pd.DataFrame(
             0,
-            index=np.arange(EPOCH_SIZE, EPISODES+1, EPOCH_SIZE),
+            index=astats_index,
             columns=[
                 'lastReward',
                 'buyAndHold',
@@ -129,7 +138,7 @@ class Trader:
         self.folder.mkdir(exist_ok=False)
 
         # Save architechture
-        self.agent.model._name = self.model_id
+        self.agent.model._name = str(self.model_id)
         with open(self.folder / 'arch.txt','w') as fh:
             self.agent.model.summary(print_fn=lambda x: fh.write(x + '\n'))
 
@@ -225,7 +234,7 @@ class Trader:
                 step += 1
 
             # Save model
-            if not episode % EPOCH_SIZE:
+            if not episode % EPOCH_SIZE or episode == 1:
                 self._save_model(episode)
             else:
                 # Set default values to evaluation stats
@@ -317,15 +326,6 @@ class Trader:
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import pandas as pd
-    import cProfile
-    import re
-    import pstats
 
-
-    profiler = cProfile.Profile()
-    profiler.enable()
     Trader()
-    profiler.disable()
-
-    p = pstats.Stats(profiler)
-    p.sort_stats('cumulative').print_stats(30)
+    print('=== EOL ===')

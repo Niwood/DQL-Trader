@@ -96,6 +96,8 @@ class ModelAssessment:
             look_back_window=num_time_steps,
             static_initial_step=0)
 
+        # Assertions
+        assert self.wavelet_scales != 0, 'wavelet_scales = 0'
 
 
     def load_model(self, model_name=None):
@@ -133,9 +135,19 @@ class ModelAssessment:
 
 
         for _ in tqdm(range(self.sim_range), desc=f'Model assessment on {self.ticker}'):
-            _obs_st = obs['st'].reshape((1, self.num_time_steps, self.num_st_features))
-            _obs_lt = obs['lt'].reshape((1, self.wavelet_scales, self.num_time_steps, self.num_lt_features))
+            try:
+                _obs_st = obs['st'].reshape((1, self.num_time_steps, self.num_st_features))
+                _obs_lt = obs['lt'].reshape((1, self.wavelet_scales, self.num_time_steps, self.num_lt_features))
+            except Exception as e:
+                print('-'*10)
+                print(e)
+                print('COULD NOT RESHAPE')
+                print('LEN: ', obs['st'].shape, obs['lt'].shape)
+                quit()
+
             action = self.model.predict([_obs_st, _obs_lt])
+
+            print('--> Action in eval: ',action), quit()
 
             if np.isnan(np.sum(action)):
                 print('Action contains nan [in evaluation]: ',action), quit()
@@ -158,7 +170,7 @@ class ModelAssessment:
 
 
     def render(self):
-
+        
         if self.astats.empty:
             print(f'Hold triggers: {self.actions.count(0)} ({round( self.actions.count(0)/len(self.actions) ,3)})')
             print(f'Buy triggers: {self.actions.count(1)} ({round( self.actions.count(1)/len(self.actions) ,3)})')
@@ -191,7 +203,7 @@ if __name__ == '__main__':
         )
     collection = dc.collection
     
-    model_name = 'models/1618510946/1618511005_EPS10of500.model'
+    model_name = 'models/1618873083/1618873135_EPS1of800.model'
     ma = ModelAssessment(
         collection=collection,
         num_st_features=dc.num_st_features,
@@ -200,7 +212,7 @@ if __name__ == '__main__':
         wavelet_scales=wavelet_scales
         )
     ma.load_model(model_name=model_name)
-    ma.sim_range = 100
+    ma.sim_range = 300
     ma.simulate()
 
     print(ma.sim)

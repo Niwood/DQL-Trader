@@ -27,8 +27,14 @@ class StockTradingEnv(gym.Env):
     ACTION_SPACE_SIZE = 3 # Buy, Sell or Hold
 
 
+    def __init__(
+        self,
+        collection,
+        look_back_window,
+        max_steps=300,
+        static_initial_step=0,
+        generate_est_targets=False):
 
-    def __init__(self, collection, look_back_window, max_steps=300, static_initial_step=0, generate_est_targets=False):
         super(StockTradingEnv, self).__init__()
 
         # Constants
@@ -52,36 +58,28 @@ class StockTradingEnv(gym.Env):
 
 
     def _next_observation(self):
-        # Slice df in current steps
-        _df = self.df.loc[self.current_step - (self.LOOK_BACK_WINDOW-1) : self.current_step].copy()
+        # Define the span for the observation
+        span = (
+            self.current_step - (self.LOOK_BACK_WINDOW-1), 
+            self.current_step
+        )
         
+        # Request datapac to process the data in span
+        df_st, df_lt = self.dp.data_process(span)
+
         # Re-slice the frame for requested target in pre-training
         if self.generate_est_targets:
-            _df, target = self._specific_slice(_df, requested_target=self.requested_target)
+            _df = self.dp.get_slice(span)
+            df_st, df_lt, target = self._specific_slice(_df, requested_target=self.requested_target)
         else:
+            # Set target to none since we don't pre-train
             target = None
 
-        # Copy df for LT features
-        _df_LT = _df.copy()
+        # Request datapack to perform wavelet transform on LT features
+        df_lt = self.dp.make_wavelet(df_lt) #This row is used for wavelets, it replaces the LT features
 
-        # Determine which features are LT features
-        lt_feats = list()
-        for feat in _df.columns:
-            if feat.split('_')[0] == 'LT':
-                lt_feats.append(feat)
+        return {'st':df_st, 'lt':df_lt}, target
 
-        # Slice only LT features
-        _df_LT = _df_LT[lt_feats]
-        # _df_LT_obs = _df_LT.to_numpy()
-        _df_LT_obs = self.dp.make_wavelet(_df_LT) #This row is used for wavelets, it replaces the LT features
-
-        # Drop LT features from _df
-        _df.drop(lt_feats, axis=1, inplace=True)
-        
-        # Drop conventional features
-        _df_ST_obs = _df.drop(['close', 'high', 'low', 'open', 'volume'], axis=1).to_numpy()
-
-        return {'st':_df_ST_obs, 'lt':_df_LT_obs}, target
 
 
     def _specific_slice(self, _df, requested_target=0):
@@ -94,7 +92,6 @@ class StockTradingEnv(gym.Env):
         _df_lowess_2grad = low(np.gradient(_df.lowess_grad), _df.index, frac=0.01)[:, 1]
         _df_lowess_grad = _df['lowess_grad'].copy()
         self.df_target = _df.copy()
-        
 
         # Detect sign change
         _df.lowess_grad = np.sign(_df.lowess_grad)
@@ -104,8 +101,6 @@ class StockTradingEnv(gym.Env):
         # Set detected peaks/valleys to 0 if they are outside a quantile
         qnt = 0.05
         _df.lowess_grad = _df.lowess_grad * ((_df_lowess_2grad > np.quantile(_df_lowess_2grad, 1-qnt)) | (_df_lowess_2grad < np.quantile(_df_lowess_2grad, qnt)))
-        # print(a)
-        # quit()
     
         # Build target stack: [ [1,0,0], [1,0,0], [0,1,0], ... ]
         target = np.dstack((
@@ -121,25 +116,49 @@ class StockTradingEnv(gym.Env):
         self.df_target = self.df_target[['close', 'target', 'lowess', 'lowess_grad']]
 
         try:
-            selected_target_idx = np.random.choice(np.where(_target == requested_target)[0]) #Take a random choice
+            # selected_target_idx = np.random.choice(np.where(_target == requested_target)[0]) #Take a random choice
+            a = self.df_target[(self.df_target.target == requested_target) & (self.df_target.index>self.LOOK_BACK_WINDOW+49)]
+            selected_target_idx = np.random.choice(a.index)
         except:
             _old_requested_target = requested_target
             requested_target = 1 if requested_target==2 else 2
             try:
-                selected_target_idx = np.random.choice(np.where(_target == requested_target)[0])
+                a = self.df_target[(self.df_target.target == requested_target) & (self.df_target.index>self.LOOK_BACK_WINDOW+49)]
+                selected_target_idx = np.random.choice(a.index)
                 # print(f'--- Could not find target: {_old_requested_target} - switched to {requested_target} instead')
             except:
                 requested_target = 0
-                selected_target_idx = np.random.choice(np.where(_target == requested_target)[0])
+                a = self.df_target[(self.df_target.target == requested_target) & (self.df_target.index>self.LOOK_BACK_WINDOW+49)]
+                selected_target_idx = np.random.choice(a.index)
                 # print(f'--- Could not find target: 1 or 2 - switched to {requested_target} instead')
-
-        selected_df_idx = _df.index[selected_target_idx] #Get the df index
 
         # Drop rows used for lowess
         _df = _df.drop(['lowess', 'lowess_grad'], axis=1)
 
-        return self.df.loc[selected_df_idx - (self.LOOK_BACK_WINDOW-1) : selected_df_idx], target[selected_target_idx]
-        
+        # Request datapac to process the data in span
+        span = (
+            selected_target_idx - (self.LOOK_BACK_WINDOW-1), selected_target_idx
+        )
+
+        # Request the features in the determined span
+        try:
+            df_st, df_lt = self.dp.data_process(span, mode='dataframe')
+        except Exception as e:
+            print('='*10)
+            print(span)
+            print(requested_target)
+            print(self.df_target)
+            print(a)
+
+            df_st, df_lt = self.dp.data_process(span, mode='dataframe')
+            quit()
+
+        # Prep output vector for target 
+        target_out = np.array([0,0,0])
+        target_out[requested_target] = 1
+
+        return df_st, df_lt, target_out
+
 
 
     def _take_action(self, action):
@@ -253,8 +272,8 @@ class StockTradingEnv(gym.Env):
         # To generate initial step
         if self.static_initial_step == 0:
             self.current_step = random.randint(
-                self.LOOK_BACK_WINDOW, len(self.df.loc[:, 'open'].values)-self.max_steps
-                )
+                self.LOOK_BACK_WINDOW + 50, len(self.df.loc[:, 'open'].values)-self.max_steps
+                ) #add 50 due to that datapack needs to calc the features and remove nan rows
         else:
             self.current_step = self.static_initial_step + self.LOOK_BACK_WINDOW + 2
 
@@ -340,7 +359,7 @@ if __name__ == '__main__':
     # df = get_dummy_data()
     
     wavelet_scales = 100
-    num_time_Steps = 120
+    num_time_Steps = 300
     data_cluster = DataCluster(
         dataset='realmix',
         remove_features=['close', 'high', 'low', 'open', 'volume'],
@@ -350,12 +369,14 @@ if __name__ == '__main__':
         )
     collection = data_cluster.collection
 
-    env = StockTradingEnv(collection, look_back_window=num_time_Steps, static_initial_step=0, generate_est_targets=True)
+    env = StockTradingEnv(
+        collection,
+        look_back_window=num_time_Steps,
+        static_initial_step=0,
+        generate_est_targets=True)
     env.requested_target = 1
     obs = env.reset()
 
-
-    env.step(1)
     
     for i in range(10):
         obs, reward, done = env.step(0)

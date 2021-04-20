@@ -8,7 +8,7 @@ import random
 from pathlib import Path
 from tqdm import tqdm
 import pywt
-
+import cv2
 
 
 
@@ -18,7 +18,16 @@ class DataCluster:
     Contains a collection of data packs
     '''
 
-    def __init__(self, dataset=None, remove_features=False, num_stocks=1, wavelet_scales=100, num_time_steps=0 , verbose=True):
+    def __init__(
+        self,
+        dataset=None,
+        remove_features=False,
+        num_stocks=1,
+        wavelet_scales=0,
+        num_time_steps=0,
+        verbose=True):
+
+        self.num_time_steps = num_time_steps
 
         self.collection = list()
 
@@ -85,7 +94,7 @@ class DataCluster:
                     except: continue
 
                     # Resample for small dataframes
-                    if len(df) < 500:
+                    if len(df) < 600:
                         continue 
 
                     # All ok -> break
@@ -93,18 +102,34 @@ class DataCluster:
                 
                 if skip: continue
 
-                df.set_index('Date', inplace=True)
-                df.drop(['OpenInt'], axis=1, inplace=True)
-                df.index = pd.to_datetime(df.index)
+                # df.set_index('Date', inplace=True)
+                # df.drop(['OpenInt'], axis=1, inplace=True)
+                # df.index = pd.to_datetime(df.index)
                     
                 self.collection.append(
                     DataPack(dataframe=df, ticker=_file, remove_features=remove_features, num_time_steps=num_time_steps, wavelet_scales=wavelet_scales)
                     )
 
         # Number of features
-        self.num_lt_features = self.collection[0].num_lt_features
-        # self.num_lt_features = 100 #Due to wavelet scales, see environment._make_wavelet
-        self.num_st_features = self.collection[0].num_st_features
+        # self.num_lt_features = self.collection[0].num_lt_features
+        # self.num_st_features = self.collection[0].num_st_features
+
+
+
+    def get_model_shape(self):
+        ''' Returns the shape that will go into LT head '''
+
+        # Sample a datapack
+        dp = self.collection[0]
+
+        span = (1,self.num_time_steps)
+        df_st, df_lt = dp.data_process(span)
+        df_lt = dp.make_wavelet(df_lt)
+
+
+        return df_lt.shape , df_st.shape
+
+
 
 
 
@@ -122,54 +147,81 @@ class DataPack:
         self.wavelet_scales = wavelet_scales
         self.num_time_steps = num_time_steps
 
-        # Save original data
-        # self.org = dataframe.Close.copy()
-
         # Load data
         self.df = dataframe
 
-        # Run init methods
-        self.pre_process()
-        self.remove()
-        self.count_features()
+        # Pre-process the data frame
+        self.df_process()
 
         # Add original values to df
-        self.df = self.df.join(self.org)
+        self.org = self.df[['close', 'high', 'low', 'open', 'volume']].copy()
 
-        # Attributes
+        # Save index as date
         self.date_index = self.df.index.copy()
 
         # Switch to numeric index
         self.df.index = list(range(len(self.df)))
 
+        # Count features
+        # self.count_features()
 
-    def pre_process(self):
-        ''' Pre process data for technical indicators '''
+
+    def df_process(self):
+        
+        # Drop col
+        self.df.drop(['OpenInt'], axis=1, inplace=True)
+
+        # Set index to datetime
+        self.df.set_index('Date', inplace=True)
+        self.df.index = pd.to_datetime(self.df.index)
+        
+        # Rename columns
+        self.df.columns= self.df.columns.str.lower()
+
         # Forward fill for missing dates
         self.df = self.df.asfreq(freq='1d', method='ffill')
 
+
+
+    def data_process(self, span):
+        ''' Process data for feature extraction '''
+
+        # assert span[0]>0 , 'Negative span'
+
+        # Slice the df according to the span
+        # -50 due to nan values when calculating TIs
+        _df = self.df.loc[span[0] - 50 : span[1]].copy()
+
+        df_st = self.get_st_features(_df, span)#.to_numpy()
+        df_lt = self.get_lt_features(_df, span)#.to_numpy()
+
+        return df_st, df_lt
+
+
+
+    def get_st_features(self, df, span):
         '''
         SHORT TERM
         '''
 
         # MACD
-        self.df['MACD'] = self.df.ta.macd(fast=20, slow=40).MACDh_20_40_9
+        df['MACD'] = df.ta.macd(fast=12, slow=26).MACDh_12_26_9
         
         # RSI signal
-        rsi = self.df.ta.rsi()
-        self.df['RSI'] = rsi
+        rsi = df.ta.rsi()
+        df['RSI'] = rsi
         # rsi_high = 80
         # rsi_low = 20
         # self.df['RSI_high'] = rsi * (rsi>rsi_high)
         # self.df['RSI_low'] = rsi * (rsi<rsi_low)
 
         # TRIX signal
-        self.df['TRIX'] = self.df.ta.trix(length=28).TRIXs_28_9
+        df['TRIX'] = df.ta.trix(length=14).TRIXs_14_9
 
         # Bollinger band
         length = 30
-        bband = self.df.ta.bbands(length=length)
-        bband['hlc'] = self.df.ta.hlc3()
+        bband = df.ta.bbands(length=length)
+        bband['hlc'] = df.ta.hlc3()
         
         # Bollinger band upper signal
         bbu_signal = bband['hlc'] - bband['BBM_'+str(length)+'_2.0']
@@ -179,60 +231,74 @@ class DataPack:
         bbl_signal = bband['BBM_'+str(length)+'_2.0'] - bband['hlc']
         bband['BBL_signal'] = (abs(bbl_signal) * (bbl_signal > 0)  / bband['BBL_'+str(length)+'_2.0'])
         
-        self.df['BBU_signal'] = bband.BBU_signal
-        self.df['BBL_signal'] = bband.BBL_signal
+        df['BBU_signal'] = bband.BBU_signal
+        df['BBL_signal'] = bband.BBL_signal
+
+        # Slice again to remove nan values
+        df = df.loc[span[0] : span[1]]
+
+        # Scale all values
+        scaler = MinMaxScaler()
+        df[df.columns] = scaler.fit_transform(df[df.columns])
+
+        df = df.drop(self.remove_features, axis=1)
+
+        df.dropna(inplace=True)
+        if df.isnull().sum().sum() > 0:
+            print(df)
+            print(span)
+            print('PIANWFD')
+            quit()
+
+        return df
 
 
+        
+    def get_lt_features(self, df, span):
         '''
         LONG TERM
         long term features requires to have "LT_" in the beginning of the name
         '''
-        # SMA
-        # self.df['LT_SMA40'] = self.df.ta.sma(length=40)
-        # self.df['LT_SMA35'] = self.df.ta.sma(length=35)
-        # self.df['LT_SMA30'] = self.df.ta.sma(length=30)
-        # self.df['LT_SMA25'] = self.df.ta.sma(length=25)
-        # self.df['LT_SMA20'] = self.df.ta.sma(length=20)
-        # self.df['LT_SMA15'] = self.df.ta.sma(length=15)
-        # self.df['LT_SMA10'] = self.df.ta.sma(length=10)
-        # self.df['LT_SMA5'] = self.df.ta.sma(length=5)
 
-        # Wavelets
-        self.df['LT_close'] = self.df.close.copy()
-        self.df['LT_RSI'] = self.df.RSI.copy()
+        # Wavelets as LT
+        df['LT_close'] = df.close.copy()
+        df['LT_RSI'] = df.RSI.copy()
 
-
-        '''
-        DROP NA AND SCALE
-        '''
-        # Drop NA rows
-        self.df.dropna(inplace=True)
-
-        # Copy df for original
-        self.org = self.df[['close', 'high', 'low', 'open', 'volume']].copy()
+        # Slice again to remove nan values
+        df = df.loc[span[0] : span[1]]
+        df = df[['LT_close', 'LT_RSI']]
 
         # Scale all values
-        self.scaler = MinMaxScaler()
-        self.df[self.df.columns] = self.scaler.fit_transform(self.df[self.df.columns])
+        # scaleing is done in make_wavelets
 
+        return df
+
+
+    def get_slice(self, span):
+        ''' To get the close values for a certain span '''
+        return self.df.loc[span[0] : span[1]].copy()
 
 
     def count_features(self):
-        ''' Return number opf features for long/short term df '''
+        ''' Return number of features for long/short term df '''
 
-        lt_feats = 0
-        for feat in self.df.columns:
-            if feat.split('_')[0] == 'LT':
-                lt_feats += 1
+        _span = (200,300) #Arbitrary span to be able to perform data process
+        df_st, df_lt = self.data_process(_span)
 
-        self.num_lt_features = lt_feats
-        self.num_st_features = len(self.df.columns) - lt_feats
+        self.num_lt_features = len(df_lt.columns)
+        self.num_st_features = len(df_st.columns)
+
 
 
     def make_wavelet(self, signals):
         # signal: (time_steps,)
         # coef: (scales, time_steps)
+        print(signals.shape), quit()
+
+        # Freq scales used in the transform
         scales = np.arange(1, self.wavelet_scales+1)
+
+        # Allocate output
         out = np.zeros(shape=(len(scales), self.num_time_steps, len(signals.columns)))
         
         for idx, col in enumerate(signals.columns):
@@ -246,44 +312,48 @@ class DataPack:
                 print('->>', coef.shape, idx)
                 print('->>', out.shape)
                 quit()
-        return out #(scales, time_steps, num_LT_features)
 
+        # Scale all values
+        scaler = MinMaxScaler()
+        out = scaler.fit_transform( out.reshape(-1, out.shape[-1]) ).reshape(out.shape)
 
-    def remove(self):
-        ''' Remove columns '''
-        if self.remove_features:
-            self.df.drop(self.remove_features, axis=1, inplace=True)
-        
-        for col in ['close', 'high', 'low', 'open', 'volume']:
-            try:
-                self.df.rename(columns={col: "_"+col}, inplace=True)
-            except:
-                pass
+        # Resize to increase fit/train speed
+        scale_percent = 0.3 #fraction of original size
+        width = int(out.shape[1] * scale_percent)
+        height = int(out.shape[0] * scale_percent)
+        out = cv2.resize(out, (width, height), interpolation=cv2.INTER_AREA)
 
-
+        return out #Format: (scales, time_steps, num_LT_features)
 
 
 
 if __name__ == '__main__':
+    from environment import StockTradingEnv
     
-    data_cluster = DataCluster(
+    num_steps = 300
+    wavelet_scales = 100
+    dc = DataCluster(
         dataset='realmix',
         remove_features=['close', 'high', 'low', 'open', 'volume'],
-        num_stocks=1,
-        num_time_steps=100
+        num_stocks=5,
+        wavelet_scales=wavelet_scales,
+        num_time_steps=num_steps
         )
-    collection = data_cluster.collection
 
-    # for dp in collection:
-    #     print(f'{dp.ticker} has {len(dp.df)}')
-        # df.index = list(range(len(df)))
-        # steps = 90
-        # start = random.randint(10,2000)
-        # df = df.loc[start:start+steps]
+    dc.get_model_shape()
+    quit()
+    collection = dc.collection
 
-
-    df = collection[0].df
+    env = StockTradingEnv(
+        collection,
+        look_back_window=num_steps,
+        generate_est_targets=True
+        )
+    env.requested_target = 1
+    obs = env.reset()
     
+
+
     # df = df[0:300]
 
     # df.plot(subplots=True)
@@ -291,10 +361,10 @@ if __name__ == '__main__':
 
 
     # def make_data():
-    #     data_cluster = DataCluster(
+    #     dc = DataCluster(
     #         dataset='realmix',
     #         remove_features=['close', 'high', 'low', 'open', 'volume'],
     #         num_stocks=0,
     #         num_time_steps=300
     #         )
-    #     collection = data_cluster.collection
+    #     collection = dc.collection

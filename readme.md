@@ -30,6 +30,12 @@ There is also an Streamlit application built for evaluating the model.
 
 ### Installation
 
+```bash
+mkdir models data data/stock data/pre_train_data
+
+```
+
+
 ```python
 #pip install -r requirements.txt
 ```

@@ -27,6 +27,7 @@ from statsmodels.nonparametric.smoothers_lowess import lowess as low
 from tqdm import tqdm
 from statistics import mean
 import pickle
+import math
 
 import tensorflow as tf
 physical_devices = tf.config.list_physical_devices('GPU') 
@@ -79,53 +80,39 @@ class Agent:
         st_head = Input(shape=(self.num_time_steps, self.num_st_features))
         # st = Dropout(0.3)(st_head)
 
-        st = GRU(128, return_sequences=True)(st_head)
+        st = GRU(8, return_sequences=True)(st_head)
         st = Dropout(0.2)(st)
 
-        st = GRU(64, return_sequences=True)(st)
+        st = GRU(8, return_sequences=False)(st)
         st = Dropout(0.2)(st)
 
-        st = GRU(32, return_sequences=False)(st)
-        st = Dropout(0.2)(st)
+        # st = GRU(32, return_sequences=False)(st)
+        # st = Dropout(0.2)(st)
 
-        # st = Conv1D(filters=12, kernel_size=2, padding='same', activation='relu')(st_head)
-        # st = MaxPooling1D(pool_size=2, padding='same')(st)
-        # st = BatchNormalization()(st)
-
-        # st = Conv1D(filters=12, kernel_size=2, padding='same', activation='relu')(st)
-        # st = MaxPooling1D(pool_size=2, padding='same')(st)
-
-        # st = Flatten(name='st_flatten')(st)
         st = Dense(32)(st)
 
         ''' LONG TERM HEAD '''
         lt_head = Input(shape=(self.wavelet_scales, self.num_time_steps, self.num_lt_features))
 
-        lt = Conv2D(filters=32, kernel_size=2, padding='valid', activation='relu')(lt_head)
-        lt = MaxPooling2D(pool_size=2, strides=(1,1), padding='valid')(lt)
+        lt = Conv2D(filters=16, kernel_size=2, padding='valid', activation='relu')(lt_head)
         lt = BatchNormalization()(lt)
-
-        lt = Conv2D(filters=16, kernel_size=2, padding='valid', activation='relu')(lt)
-        lt = MaxPooling2D(pool_size=2, padding='valid')(lt)
-        lt = BatchNormalization()(lt)
+        lt = MaxPooling2D(pool_size=32, strides=(1,1), padding='valid')(lt)
         
-        lt = Conv2D(filters=8, kernel_size=4, padding='valid', activation='relu')(lt)
-        lt = MaxPooling2D(pool_size=2, padding='valid')(lt)
-        lt = BatchNormalization()(lt)
 
-        # lt = Conv2D(filters=128, kernel_size=2, padding='valid', activation='relu')(lt)
-        # lt = MaxPooling2D(pool_size=2, padding='same')(lt)
+        # lt = Conv2D(filters=16, kernel_size=2, padding='valid', activation='relu')(lt)
+        # lt = MaxPooling2D(pool_size=2, padding='valid')(lt)
+        # lt = BatchNormalization()(lt)
+        
+        # lt = Conv2D(filters=8, kernel_size=4, padding='valid', activation='relu')(lt)
+        # lt = MaxPooling2D(pool_size=2, padding='valid')(lt)
         # lt = BatchNormalization()(lt)
 
-        lt = Flatten(name='lt_flatten')(lt)
-        lt = Dense(1024)(lt)
+        lt = Flatten(name='ltflatten')(lt)
+        lt = Dense(128)(lt)
         lt = Dropout(0.2)(lt)
 
-        # lt = Dense(512)(lt)
+        # lt = Dense(256)(lt)
         # lt = Dropout(0.2)(lt)
-
-        lt = Dense(256)(lt)
-        lt = Dropout(0.2)(lt)
 
         lt = Dense(64)(lt)
         lt = Dropout(0.2)(lt)
@@ -136,8 +123,8 @@ class Agent:
         tail = Dense(32)(tail)
         tail = Dropout(0.2)(tail)
 
-        tail = Dense(8)(tail)
-        tail = Dropout(0.2)(tail)
+        # tail = Dense(8)(tail)
+        # tail = Dropout(0.2)(tail)
 
         ''' MULTI OUTPUTS '''
         action_prediction = Dense(3, activation='softmax')(tail)
@@ -196,16 +183,25 @@ class Agent:
             train_size = int(sample_size * train_ratio)
             
 
-            for requested_target in range(3): #3 for each action
+            for requested_target in [0,1,2]: #3 for each action
                 for k in tqdm(range(sample_size), desc=f'Generating pre-training samples with target {requested_target}'):
                     _env.requested_target = requested_target #Specify the requested action for in which the env will find a dataset for
                     state, target = _env.reset()
+                    
                     # _env.df_target.plot(subplots=True)
                     # plt.show()
                     # quit()
                     
                     if (state['st'].shape[0], state['lt'].shape[1]) != (self.num_time_steps, self.num_time_steps):
                         continue #This happens when there is not enough data left of the dataframe at the sampled action
+                    if math.isnan(min(state['st'].reshape(-1,))) or math.isnan(max(state['st'].reshape(-1,))):
+                        continue
+                    if math.isnan(min(state['lt'].reshape(-1,))) or math.isnan(max(state['lt'].reshape(-1,))):
+                        continue
+                    if min(state['st'].reshape(-1,)) == max(state['st'].reshape(-1,)): 
+                        continue
+                    if min(state['lt'].reshape(-1,)) == max(state['lt'].reshape(-1,)):
+                        continue
                     
                     if k < train_size:
                         loader = batch_loader_train
@@ -224,7 +220,7 @@ class Agent:
             #     pickle.dump(batch_loader_train, handle, protocol=pickle.HIGHEST_PROTOCOL)
         
         elif cached_data:
-            print('Loading cached data..')
+            print('Loading cached data for pre-training..')
             with open('data/pre_train_data/batch_loader_test.pkl', 'rb') as handle:
                 batch_loader_test = pickle.load(handle)
             with open('data/pre_train_data/batch_loader_train.pkl', 'rb') as handle:
@@ -243,7 +239,8 @@ class Agent:
         ### Train
         st_train = np.array(batch_loader_train['st'])
         lt_train = np.array(batch_loader_train['lt'])
-        y_train = np.array(batch_loader_train['target'])
+        y_train = np.array(batch_loader_train['target']).astype('int')
+
         self.model.fit(
             [st_train, lt_train], y_train,
             batch_size=16,
@@ -259,6 +256,7 @@ class Agent:
 
         # Confusion matrix
         self.conf_mat = confusion_matrix(y_test,y_hat)
+        print(self.conf_mat)
 
         # Switch back to default lr
         self.model.optimizer.lr = _lr
@@ -279,6 +277,7 @@ class Agent:
         # Predict a mini batch OR a single state
 
         if minibatch:
+            print('---> NOW IS A MINI BATCH')
             out = model.predict([np.array(states['st']), np.array(states['lt'])])
         elif not minibatch:
             st = np.array(states['st']).reshape((1, self.num_time_steps, self.num_st_features))
@@ -312,7 +311,6 @@ class Agent:
             'st':[transition[0]['st'] for transition in minibatch],
             'lt':[transition[0]['lt'] for transition in minibatch]}
         current_qs_list = self.predict(current_states, self.model, minibatch=True)
-
 
         
         # Get future states from minibatch, then query NN model for Q values
@@ -433,7 +431,7 @@ if __name__ == '__main__':
 
     wavelet_scales = 100
     num_steps = 300
-    num_stocks = 100
+    num_stocks = 10
     dc = DataCluster(
         dataset='realmix',
         remove_features=['close', 'high', 'low', 'open', 'volume'],
@@ -451,18 +449,18 @@ if __name__ == '__main__':
         wavelet_scales=wavelet_scales,
         num_time_steps=num_steps)
 
-    agent.pre_train(collection, cached_data=True, epochs=200, sample_size=10, lr_preTrain=1e-3)
+    # agent.pre_train(collection, cached_data=True, epochs=200, sample_size=10, lr_preTrain=1e-3)
     # print(f' compare_initial_weights: {agent.compare_initial_weights()}')
     # print(agent.conf_mat)
-    # print(agent.model.summary())
-    quit()
-
+    print(agent.model.summary())
+    # quit()
 
     ma = ModelAssessment(
         collection=collection,
         num_st_features=dc.num_st_features,
         num_lt_features=dc.num_lt_features,
-        num_time_steps=num_steps
+        num_time_steps=num_steps,
+        wavelet_scales=wavelet_scales
         )
     ma.model = agent.model
 
