@@ -74,18 +74,15 @@ class ModelAssessment:
     def __init__(
         self,
         collection=None,
-        num_st_features=None,
-        num_lt_features=None,
+        model_shape=tuple(),
         num_time_steps=None,
-        wavelet_scales=0,
         sim_range=300
         ):
         
         # Parameters
-        self.num_st_features = num_st_features
-        self.num_lt_features = num_lt_features
+        self.st_shape = model_shape[0]
+        self.lt_shape = model_shape[1]
         self.num_time_steps = num_time_steps
-        self.wavelet_scales = wavelet_scales
         self.sim_range = sim_range
         self.astats = pd.DataFrame()
         self.model = None
@@ -95,9 +92,6 @@ class ModelAssessment:
             collection,
             look_back_window=num_time_steps,
             static_initial_step=0)
-
-        # Assertions
-        assert self.wavelet_scales != 0, 'wavelet_scales = 0'
 
 
     def load_model(self, model_name=None):
@@ -136,8 +130,8 @@ class ModelAssessment:
 
         for _ in tqdm(range(self.sim_range), desc=f'Model assessment on {self.ticker}'):
             try:
-                _obs_st = obs['st'].reshape((1, self.num_time_steps, self.num_st_features))
-                _obs_lt = obs['lt'].reshape((1, self.wavelet_scales, self.num_time_steps, self.num_lt_features))
+                _obs_st = obs['st'].reshape((1,) + self.st_shape)
+                _obs_lt = obs['lt'].reshape((1,) + self.lt_shape)
             except Exception as e:
                 print('-'*10)
                 print(e)
@@ -145,9 +139,8 @@ class ModelAssessment:
                 print('LEN: ', obs['st'].shape, obs['lt'].shape)
                 quit()
 
+            # Make prediction
             action = self.model.predict([_obs_st, _obs_lt])
-
-            print('--> Action in eval: ',action), quit()
 
             if np.isnan(np.sum(action)):
                 print('Action contains nan [in evaluation]: ',action), quit()
@@ -202,14 +195,13 @@ if __name__ == '__main__':
         num_time_steps=num_steps
         )
     collection = dc.collection
+    (st_shape, lt_shape) = dc.get_model_shape()
     
     model_name = 'models/1618873083/1618873135_EPS1of800.model'
     ma = ModelAssessment(
         collection=collection,
-        num_st_features=dc.num_st_features,
-        num_lt_features=dc.num_lt_features,
-        num_time_steps=num_steps,
-        wavelet_scales=wavelet_scales
+        model_shape=(st_shape, lt_shape),
+        num_time_steps=num_steps
         )
     ma.load_model(model_name=model_name)
     ma.sim_range = 300

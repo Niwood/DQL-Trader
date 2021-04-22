@@ -64,27 +64,31 @@ class StockTradingEnv(gym.Env):
             self.current_step
         )
         
-        # Request datapac to process the data in span
-        df_st, df_lt = self.dp.data_process(span)
-
         # Re-slice the frame for requested target in pre-training
         if self.generate_est_targets:
+            # Request the df slice from dp
             _df = self.dp.get_slice(span)
-            df_st, df_lt, target = self._specific_slice(_df, requested_target=self.requested_target)
+
+            # Re-calculate the slice based on the requested target
+            span, target = self._specific_slice(_df, requested_target=self.requested_target)
+
         else:
             # Set target to none since we don't pre-train
             target = None
 
-        # Request datapack to perform wavelet transform on LT features
-        df_lt = self.dp.make_wavelet(df_lt) #This row is used for wavelets, it replaces the LT features
+        # Request datapac to process the data in span
+        df_st, df_lt = self.dp.data_process(span)
 
         return {'st':df_st, 'lt':df_lt}, target
 
 
 
     def _specific_slice(self, _df, requested_target=0):
-        # Slice df on a specific target that is calculated from
-        # a Locally Weighted Scatterplot Smoothing on the close column to determine local max/min
+        '''
+        Slice df on a specific target that is calculated from
+        a Locally Weighted Scatterplot Smoothing on the close column to determine local max/min
+        Outputs a span and target
+        '''
 
         # Lowess and lowess grad
         _df['lowess'] = low(_df.close, _df.index, frac=0.05)[:, 1]
@@ -132,32 +136,16 @@ class StockTradingEnv(gym.Env):
                 selected_target_idx = np.random.choice(a.index)
                 # print(f'--- Could not find target: 1 or 2 - switched to {requested_target} instead')
 
-        # Drop rows used for lowess
-        _df = _df.drop(['lowess', 'lowess_grad'], axis=1)
-
         # Request datapac to process the data in span
         span = (
             selected_target_idx - (self.LOOK_BACK_WINDOW-1), selected_target_idx
         )
 
-        # Request the features in the determined span
-        try:
-            df_st, df_lt = self.dp.data_process(span, mode='dataframe')
-        except Exception as e:
-            print('='*10)
-            print(span)
-            print(requested_target)
-            print(self.df_target)
-            print(a)
-
-            df_st, df_lt = self.dp.data_process(span, mode='dataframe')
-            quit()
-
         # Prep output vector for target 
         target_out = np.array([0,0,0])
         target_out[requested_target] = 1
 
-        return df_st, df_lt, target_out
+        return span, target_out
 
 
 
@@ -352,12 +340,6 @@ if __name__ == '__main__':
     from tools import get_dummy_data
     from matplotlib import pyplot as plt
 
-    # df = GOOG
-    # df = df.asfreq(freq='1d', method='ffill')
-
-    # DUMMY DATA
-    # df = get_dummy_data()
-    
     wavelet_scales = 100
     num_time_Steps = 300
     data_cluster = DataCluster(
@@ -376,6 +358,7 @@ if __name__ == '__main__':
         generate_est_targets=True)
     env.requested_target = 1
     obs = env.reset()
+
 
     
     for i in range(10):

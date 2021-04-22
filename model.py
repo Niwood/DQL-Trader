@@ -39,23 +39,20 @@ class Agent:
 
     def __init__(
         self,
-        num_st_features=None,
-        num_lt_features=None,
-        wavelet_scales=0,
+        model_shape=tuple(),
         num_time_steps=None
         ):
 
         # Constants
         self.DISCOUNT = 0.99
-        self.REPLAY_MEMORY_SIZE = 1000  # How many last steps to keep for model training
-        self.MIN_REPLAY_MEMORY_SIZE = 0.1 * self.REPLAY_MEMORY_SIZE  # Minimum number of steps in a memory to start training
-        self.MINIBATCH_SIZE = 64  # How many steps (samples) to use for training
+        self.REPLAY_MEMORY_SIZE = 30_000  # How many last steps to keep for model training
+        self.MIN_REPLAY_MEMORY_SIZE = 0.3 * self.REPLAY_MEMORY_SIZE  # Minimum number of steps in a memory to start training
+        self.MINIBATCH_SIZE = 32  # How many steps (samples) to use for training
         self.UPDATE_TARGET_EVERY = 5  # Terminal states (end of episodes)
 
         # Main model - gets trained every step
-        self.num_st_features = num_st_features
-        self.num_lt_features = num_lt_features
-        self.wavelet_scales = wavelet_scales
+        self.st_shape = model_shape[0]
+        self.lt_shape = model_shape[1]
         self.num_time_steps = num_time_steps
         self.model = self._create_model()
 
@@ -73,39 +70,42 @@ class Agent:
         self.elapsed = 0
         self.conf_mat = np.array([])
 
+        # Assertions
+        # assert model_shape==tuple() , 'Missing model shape'
+        # assert num_time_steps==None , 'Missing num time steps'
+
 
     def _create_model(self):
         
         ''' SHORT TERM HEAD '''
-        st_head = Input(shape=(self.num_time_steps, self.num_st_features))
+        st_head = Input(shape=self.st_shape)
         # st = Dropout(0.3)(st_head)
 
         st = GRU(8, return_sequences=True)(st_head)
         st = Dropout(0.2)(st)
 
-        st = GRU(8, return_sequences=False)(st)
+        st = GRU(8, return_sequences=True)(st)
         st = Dropout(0.2)(st)
 
-        # st = GRU(32, return_sequences=False)(st)
-        # st = Dropout(0.2)(st)
+        st = GRU(4, return_sequences=False)(st)
+        st = Dropout(0.2)(st)
 
         st = Dense(32)(st)
 
         ''' LONG TERM HEAD '''
-        lt_head = Input(shape=(self.wavelet_scales, self.num_time_steps, self.num_lt_features))
+        lt_head = Input(shape=self.lt_shape)
 
-        lt = Conv2D(filters=16, kernel_size=2, padding='valid', activation='relu')(lt_head)
+        lt = Conv2D(filters=4, kernel_size=2, padding='valid', activation='relu')(lt_head)
+        lt = MaxPooling2D(pool_size=4, strides=(1,1), padding='valid')(lt)
         lt = BatchNormalization()(lt)
-        lt = MaxPooling2D(pool_size=32, strides=(1,1), padding='valid')(lt)
-        
 
-        # lt = Conv2D(filters=16, kernel_size=2, padding='valid', activation='relu')(lt)
-        # lt = MaxPooling2D(pool_size=2, padding='valid')(lt)
-        # lt = BatchNormalization()(lt)
+        lt = Conv2D(filters=4, kernel_size=2, padding='valid', activation='relu')(lt)
+        lt = MaxPooling2D(pool_size=2, padding='valid')(lt)
+        lt = BatchNormalization()(lt)
         
-        # lt = Conv2D(filters=8, kernel_size=4, padding='valid', activation='relu')(lt)
-        # lt = MaxPooling2D(pool_size=2, padding='valid')(lt)
-        # lt = BatchNormalization()(lt)
+        lt = Conv2D(filters=4, kernel_size=4, padding='valid', activation='relu')(lt)
+        lt = MaxPooling2D(pool_size=2, padding='valid')(lt)
+        lt = BatchNormalization()(lt)
 
         lt = Flatten(name='ltflatten')(lt)
         lt = Dense(128)(lt)
@@ -123,8 +123,8 @@ class Agent:
         tail = Dense(32)(tail)
         tail = Dropout(0.2)(tail)
 
-        # tail = Dense(8)(tail)
-        # tail = Dropout(0.2)(tail)
+        tail = Dense(8)(tail)
+        tail = Dropout(0.2)(tail)
 
         ''' MULTI OUTPUTS '''
         action_prediction = Dense(3, activation='softmax')(tail)
@@ -166,11 +166,11 @@ class Agent:
 
         # Save default lr and sub the new one for pre-training
         _lr = K.eval(self.model.optimizer.lr)
-        lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-            lr_preTrain,
-            decay_steps=100000,
-            decay_rate=0.99)
-        self.model.optimizer.lr = lr_schedule
+        # lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+        #     lr_preTrain,
+        #     decay_steps=100000,
+        #     decay_rate=0.99)
+        self.model.optimizer.lr = lr_preTrain
 
         # Init env for pre-train
         _env = StockTradingEnv(collection, look_back_window=self.num_time_steps, generate_est_targets=True)
@@ -183,25 +183,23 @@ class Agent:
             train_size = int(sample_size * train_ratio)
             
 
-            for requested_target in [0,1,2]: #3 for each action
+            for requested_target in [1,2,0]: #3 for each action
                 for k in tqdm(range(sample_size), desc=f'Generating pre-training samples with target {requested_target}'):
                     _env.requested_target = requested_target #Specify the requested action for in which the env will find a dataset for
-                    state, target = _env.reset()
+
+                    try:
+                        state, target = _env.reset()
+                    except:
+                        continue
                     
                     # _env.df_target.plot(subplots=True)
                     # plt.show()
                     # quit()
                     
-                    if (state['st'].shape[0], state['lt'].shape[1]) != (self.num_time_steps, self.num_time_steps):
+                    if (state['st'].shape, state['lt'].shape) != (self.st_shape, self.lt_shape):
+                        print((state['st'].shape[0], state['lt'].shape[1]),'|',(self.num_time_steps, self.num_time_steps))
                         continue #This happens when there is not enough data left of the dataframe at the sampled action
-                    if math.isnan(min(state['st'].reshape(-1,))) or math.isnan(max(state['st'].reshape(-1,))):
-                        continue
-                    if math.isnan(min(state['lt'].reshape(-1,))) or math.isnan(max(state['lt'].reshape(-1,))):
-                        continue
-                    if min(state['st'].reshape(-1,)) == max(state['st'].reshape(-1,)): 
-                        continue
-                    if min(state['lt'].reshape(-1,)) == max(state['lt'].reshape(-1,)):
-                        continue
+
                     
                     if k < train_size:
                         loader = batch_loader_train
@@ -213,11 +211,11 @@ class Agent:
                     loader['target'].append(target)
 
             # Save batches
-            # with open('data/pre_train_data/batch_loader_test.pkl', 'wb') as handle:
-            #     pickle.dump(batch_loader_test, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            with open('data/pre_train_data/batch_loader_test.pkl', 'wb') as handle:
+                pickle.dump(batch_loader_test, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-            # with open('data/pre_train_data/batch_loader_train.pkl', 'wb') as handle:
-            #     pickle.dump(batch_loader_train, handle, protocol=pickle.HIGHEST_PROTOCOL)
+            with open('data/pre_train_data/batch_loader_train.pkl', 'wb') as handle:
+                pickle.dump(batch_loader_train, handle, protocol=pickle.HIGHEST_PROTOCOL)
         
         elif cached_data:
             print('Loading cached data for pre-training..')
@@ -239,7 +237,7 @@ class Agent:
         ### Train
         st_train = np.array(batch_loader_train['st'])
         lt_train = np.array(batch_loader_train['lt'])
-        y_train = np.array(batch_loader_train['target']).astype('int')
+        y_train = np.array(batch_loader_train['target'])
 
         self.model.fit(
             [st_train, lt_train], y_train,
@@ -277,11 +275,10 @@ class Agent:
         # Predict a mini batch OR a single state
 
         if minibatch:
-            print('---> NOW IS A MINI BATCH')
             out = model.predict([np.array(states['st']), np.array(states['lt'])])
         elif not minibatch:
-            st = np.array(states['st']).reshape((1, self.num_time_steps, self.num_st_features))
-            lt = np.array(states['lt']).reshape((1, self.wavelet_scales, self.num_time_steps, self.num_lt_features))
+            st = np.array(states['st']).reshape((1, self.st_shape[0], self.st_shape[1]))
+            lt = np.array(states['lt']).reshape((1, self.lt_shape[0], self.lt_shape[1], self.lt_shape[2]))
             out = model.predict([st, lt])
 
         try:
@@ -440,13 +437,12 @@ if __name__ == '__main__':
         num_time_steps=num_steps
         )
     collection = dc.collection
+    (st_shape, lt_shape) = dc.get_model_shape()
 
     env = StockTradingEnv(collection, look_back_window=num_steps)
     
     agent = Agent(
-        num_st_features=dc.num_st_features,
-        num_lt_features=dc.num_lt_features,
-        wavelet_scales=wavelet_scales,
+        model_shape=(st_shape, lt_shape),
         num_time_steps=num_steps)
 
     # agent.pre_train(collection, cached_data=True, epochs=200, sample_size=10, lr_preTrain=1e-3)
@@ -457,10 +453,8 @@ if __name__ == '__main__':
 
     ma = ModelAssessment(
         collection=collection,
-        num_st_features=dc.num_st_features,
-        num_lt_features=dc.num_lt_features,
-        num_time_steps=num_steps,
-        wavelet_scales=wavelet_scales
+        model_shape=(st_shape, lt_shape),
+        num_time_steps=num_steps
         )
     ma.model = agent.model
 

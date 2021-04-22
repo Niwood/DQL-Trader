@@ -117,17 +117,18 @@ class DataCluster:
 
 
     def get_model_shape(self):
-        ''' Returns the shape that will go into LT head '''
+        ''' Returns the shape that will go into model '''
 
         # Sample a datapack
         dp = self.collection[0]
 
-        span = (1,self.num_time_steps)
+        # Arbitrary span for calculation
+        span = (300,self.num_time_steps+299)
+        
+        # Request data process from datapack
         df_st, df_lt = dp.data_process(span)
-        df_lt = dp.make_wavelet(df_lt)
 
-
-        return df_lt.shape , df_st.shape
+        return df_st.shape, df_lt.shape
 
 
 
@@ -146,6 +147,8 @@ class DataPack:
         self.ticker = ticker
         self.wavelet_scales = wavelet_scales
         self.num_time_steps = num_time_steps
+        self.st_scale_percent = 0.5 #fraction of original size
+        self.lt_scale_percent = 0.5
 
         # Load data
         self.df = dataframe
@@ -184,7 +187,10 @@ class DataPack:
 
 
     def data_process(self, span):
-        ''' Process data for feature extraction '''
+        '''
+        Process data for feature extraction
+        Output as numpy array
+        '''
 
         # assert span[0]>0 , 'Negative span'
 
@@ -192,8 +198,8 @@ class DataPack:
         # -50 due to nan values when calculating TIs
         _df = self.df.loc[span[0] - 50 : span[1]].copy()
 
-        df_st = self.get_st_features(_df, span)#.to_numpy()
-        df_lt = self.get_lt_features(_df, span)#.to_numpy()
+        df_st = self.get_st_features(_df, span)
+        df_lt = self.get_lt_features(_df, span)
 
         return df_st, df_lt
 
@@ -241,16 +247,26 @@ class DataPack:
         scaler = MinMaxScaler()
         df[df.columns] = scaler.fit_transform(df[df.columns])
 
+        # Drop features that are not supposed to go into model
         df = df.drop(self.remove_features, axis=1)
 
-        df.dropna(inplace=True)
+        # Check null
+        df.fillna(method='bfill', inplace=True)
         if df.isnull().sum().sum() > 0:
+            print(self.ticker)
             print(df)
             print(span)
-            print('PIANWFD')
-            quit()
+            print('FOUND NULL IN ST FEATURES - see data_loader -> get_st_features')
+            assert False
+        
+        # Convert to numpy
+        out = df.to_numpy()
 
-        return df
+        # Resize to increase fit/train speed
+        height = int(out.shape[0] * self.st_scale_percent)
+        out = cv2.resize(out, (out.shape[1], height), interpolation=cv2.INTER_AREA)
+
+        return out
 
 
         
@@ -268,32 +284,16 @@ class DataPack:
         df = df.loc[span[0] : span[1]]
         df = df[['LT_close', 'LT_RSI']]
 
-        # Scale all values
-        # scaleing is done in make_wavelets
+        # Wavelet transform
+        wt_trans = self.make_wavelet(df)
 
-        return df
-
-
-    def get_slice(self, span):
-        ''' To get the close values for a certain span '''
-        return self.df.loc[span[0] : span[1]].copy()
-
-
-    def count_features(self):
-        ''' Return number of features for long/short term df '''
-
-        _span = (200,300) #Arbitrary span to be able to perform data process
-        df_st, df_lt = self.data_process(_span)
-
-        self.num_lt_features = len(df_lt.columns)
-        self.num_st_features = len(df_st.columns)
+        return wt_trans
 
 
 
     def make_wavelet(self, signals):
-        # signal: (time_steps,)
+        # Outputs wavelet transform, input pandas df
         # coef: (scales, time_steps)
-        print(signals.shape), quit()
 
         # Freq scales used in the transform
         scales = np.arange(1, self.wavelet_scales+1)
@@ -318,12 +318,30 @@ class DataPack:
         out = scaler.fit_transform( out.reshape(-1, out.shape[-1]) ).reshape(out.shape)
 
         # Resize to increase fit/train speed
-        scale_percent = 0.3 #fraction of original size
-        width = int(out.shape[1] * scale_percent)
-        height = int(out.shape[0] * scale_percent)
+        width = int(out.shape[1] * self.lt_scale_percent)
+        height = int(out.shape[0] * self.lt_scale_percent)
         out = cv2.resize(out, (width, height), interpolation=cv2.INTER_AREA)
 
         return out #Format: (scales, time_steps, num_LT_features)
+
+
+
+    def get_slice(self, span):
+        ''' To get the close values for a certain span '''
+        return self.df.loc[span[0] : span[1]].copy()
+
+
+
+    def count_features(self):
+        ''' Return number of features for long/short term df '''
+
+        _span = (200,300) #Arbitrary span to be able to perform data process
+        df_st, df_lt = self.data_process(_span)
+
+        self.num_lt_features = len(df_lt.columns)
+        self.num_st_features = len(df_st.columns)
+
+
 
 
 
@@ -340,7 +358,8 @@ if __name__ == '__main__':
         num_time_steps=num_steps
         )
 
-    dc.get_model_shape()
+    (st_shape, lt_shape) = dc.get_model_shape()
+    print(st_shape)
     quit()
     collection = dc.collection
 

@@ -23,13 +23,13 @@ from sklearn.preprocessing import MinMaxScaler
 from backtesting.test import GOOG
 import pandas_ta as ta
 
-from tools import safe_div
+from tools import safe_div, tic, toc
 
 
 # Environment settings
-EPISODES = 800
-MAX_STEPS = 300 #Max steps taken by the env until the episode ends
-num_stocks = 100
+EPISODES = 20_000
+MAX_STEPS = 90 #Max steps taken by the env until the episode ends
+num_stocks = 0
 WAVELET_SCALES = 100 #keep - number of frequecys used the wavelet transform
 
 # Exploration settings
@@ -39,7 +39,7 @@ MIN_EPSILON = 1e-6
 
 #  Stats settings
 AGGREGATE_STATS_EVERY = 1  #keep - episodes
-EPOCH_SIZE = 10
+EPOCH_SIZE = 50
 
 
 class Trader:
@@ -58,23 +58,20 @@ class Trader:
             num_time_steps=self.num_time_steps
             )
         self.collection = self.data_cluster.collection
+        (st_shape, lt_shape) = self.data_cluster.get_model_shape()
         
         # Agent
         self.agent = Agent(
-            st_shape=self.data_cluster.get_st_shape(),
-            lt_shape=self.data_cluster.get_lt_shape(),
-            num_st_features=self.data_cluster.num_st_features,
-            num_lt_features=self.data_cluster.num_lt_features,
-            wavelet_scales=WAVELET_SCALES,
+            model_shape=(st_shape, lt_shape),
             num_time_steps=self.num_time_steps
             )
-        # self.agent.pre_train(
-        #     self.collection,
-        #     cached_data=True,
-        #     epochs=20,
-        #     sample_size=30_000,
-        #     lr_preTrain=1e-3
-        #     )
+        self.agent.pre_train(
+            self.collection,
+            cached_data=True,
+            epochs=300,
+            sample_size=30_000,
+            lr_preTrain=1e-3
+            )
 
         # Environment
         self.env = StockTradingEnv(
@@ -181,7 +178,7 @@ class Trader:
     def run(self):
 
         # Iterate over episodes
-        for episode in tqdm(range(1, EPISODES + 1), ascii=True, unit='episodes'):
+        for episode in tqdm(range(1, EPISODES + 1), ascii=True, unit='episode'):
 
             # Slice estats for this episode for simplicity
             self._estats = self.estats.loc[episode]
@@ -205,6 +202,7 @@ class Trader:
 
             # Reset flag and start iterating until episode ends
             done = False
+            
             while not done:
 
                 # This part stays mostly the same, the change is to query a model for Q values
@@ -288,7 +286,7 @@ class Trader:
         ''' Make a model predict on a sample with epsilon=0 '''
 
         # Load data
-        data_cluster = DataCluster(
+        dc = DataCluster(
             dataset=self.dataset,
             remove_features=['close', 'high', 'low', 'open', 'volume'],
             num_stocks=1,
@@ -296,14 +294,13 @@ class Trader:
             wavelet_scales=WAVELET_SCALES,
             num_time_steps=self.num_time_steps
             )
-        collection = data_cluster.collection
+        collection = dc.collection
+        (st_shape, lt_shape) = dc.get_model_shape()
         
         # Model assessment
         ma = ModelAssessment(
             collection=collection,
-            num_st_features=data_cluster.num_st_features,
-            num_lt_features=data_cluster.num_lt_features,
-            wavelet_scales = WAVELET_SCALES,
+            model_shape=(st_shape, lt_shape),
             num_time_steps = self.num_time_steps
             )
         ma.astats = self.astats.loc[episode]
