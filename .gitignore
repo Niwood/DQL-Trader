@@ -1,6 +1,7 @@
 
 
 models/
+pre_trained_models/
 data/
 logs/
 *.pkl

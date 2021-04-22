@@ -25,6 +25,7 @@ from tqdm import tqdm
 from statistics import mean
 import pickle
 import math
+from pathlib import Path
 
 import tensorflow as tf
 physical_devices = tf.config.list_physical_devices('GPU') 
@@ -158,8 +159,14 @@ class Agent:
         return mean(b)
 
 
+    def load_network(self, name):
+        # Load model
+        path = Path.cwd() / 'pre_trained_models' / str(name)
+        self.model = tf.keras.models.load_model(path)
+
+
     def pre_train(self, collection, cached_data=False, epochs=500, sample_size=500, train_ratio=0.8, lr_preTrain=1e-3):
-        from environment import StockTradingEnv
+        from core import StockTradingEnv
 
         # Save default lr and sub the new one for pre-training
         _lr = K.eval(self.model.optimizer.lr)

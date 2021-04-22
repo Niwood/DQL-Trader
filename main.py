@@ -1,9 +1,7 @@
 import sys
 
-from core import Agent
-from core import StockTradingEnv
-from core import ModelAssessment
-from core import DataCluster
+from core import Agent, DataCluster, ModelAssessment, StockTradingEnv
+from core.tools import safe_div, tic, toc
 
 from tqdm import tqdm
 import numpy as np
@@ -17,18 +15,14 @@ import json
 import logging
 import random
 
-import keras.backend as K
-from sklearn.preprocessing import MinMaxScaler
-from backtesting.test import GOOG
-import pandas_ta as ta
 
-from tools import safe_div, tic, toc
-
+# Pre-trained network to load
+PT_NETWORK = 1619098339
 
 # Environment settings
 EPISODES = 20_000
 MAX_STEPS = 90 #Max steps taken by the env until the episode ends
-num_stocks = 0
+num_stocks = 1
 WAVELET_SCALES = 100 #keep - number of frequecys used the wavelet transform
 
 # Exploration settings
@@ -64,13 +58,7 @@ class Trader:
             model_shape=(st_shape, lt_shape),
             num_time_steps=self.num_time_steps
             )
-        self.agent.pre_train(
-            self.collection,
-            cached_data=True,
-            epochs=300,
-            sample_size=30_000,
-            lr_preTrain=1e-3
-            )
+        self.agent.load_network(PT_NETWORK)
 
         # Environment
         self.env = StockTradingEnv(
