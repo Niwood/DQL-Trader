@@ -1,9 +1,9 @@
 import sys
 
-from model import Agent
-from environment import StockTradingEnv
-from evaluation import ModelAssessment
-from data_loader import DataCluster
+from core import Agent
+from core import StockTradingEnv
+from core import ModelAssessment
+from core import DataCluster
 
 from tqdm import tqdm
 import numpy as np
@@ -16,7 +16,6 @@ from pathlib import Path
 import json
 import logging
 import random
-
 
 import keras.backend as K
 from sklearn.preprocessing import MinMaxScaler
