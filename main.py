@@ -260,6 +260,7 @@ class Trader:
         self.estats.loc[1:episode].to_pickle(self.folder / 'estats.pkl')
 
 
+
     def _save_model(self, episode):
         ''' For each epoch save model and make a sample inference with epsilon=0 '''
         epoch_id = int(time.time())

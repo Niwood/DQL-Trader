@@ -254,6 +254,7 @@ class StockTradingEnv(gym.Env):
 
 
     def _gen_initial_step(self):
+        
         # To generate initial step
         if self.static_initial_step == 0:
             self.current_step = random.randint(
@@ -293,14 +294,15 @@ class StockTradingEnv(gym.Env):
 
         # Copy df to use for reward algorithm
         self.df_reward = self.df.loc[self.start_step:self.start_step+self.max_steps].copy()
+        self.df_reward['date'] = self.date_index[self.start_step-1:self.start_step+self.max_steps]
         self.df_reward['shifted'] = self.df_reward.close.shift()
         self.df_reward['div'] = self.df_reward.close / self.df_reward.shifted
         self.df_reward['pos_shift'] = self.df_reward['div'] > 1
         self.df_reward['pos_return'] = self.df_reward['div'][self.df_reward['pos_shift']]
         self.df_reward['teomax'] = self.df_reward['pos_return'].fillna(1).cumprod()
+        
 
         return self._next_observation()
-
 
 
 
