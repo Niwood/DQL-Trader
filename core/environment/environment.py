@@ -18,7 +18,10 @@ INITIAL_ACCOUNT_BALANCE = 100_000
 
 
 class StockTradingEnv(gym.Env):
-    """A stock trading environment for OpenAI gym"""
+    """ A stock trading environment for OpenAI gym
+        StockTradingEnv uses the data cluster for pre-processing
+        This is only used to stage data and in the supervised learning stage
+    """
 
     metadata = {'render.modes': ['human']}
     ACTION_SPACE_SIZE = 3 # Buy, Sell or Hold

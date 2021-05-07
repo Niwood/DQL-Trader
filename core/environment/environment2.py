@@ -20,8 +20,10 @@ INITIAL_ACCOUNT_BALANCE = 100_000
 
 
 class StockTradingEnv2(gym.Env):
-    """A stock trading environment for OpenAI gym
-        COMPARED TO ENVIRONEMENT, ENVIRONMENT2 USES PRE-CACHED DATA
+    """ A stock trading environment for OpenAI gym
+        StockTradingEnv2 uses pre-processed staged data
+        This is only used for the reinforcement learning stage
+        Generate the staged data via stage_data.py
     """
 
     metadata = {'render.modes': ['human']}
@@ -39,12 +41,19 @@ class StockTradingEnv2(gym.Env):
         self.observation_space = spaces.Box(
             low=0, high=1, shape=(6, 6), dtype=np.float16)
 
+        # Parameters
+        self.load_batch = True #To load the first batch
+
 
 
     def _next_observation(self):
 
         # Iterate over staged obs
-        obs = self.staged_obs[self.iteration]
+        try:
+            obs = self.staged_obs[self.iteration_step]
+        except:
+            print('ENDED IN NEXT OBS')
+            quit()
         target = None
 
         return obs, target
@@ -56,7 +65,14 @@ class StockTradingEnv2(gym.Env):
         # current_price = random.uniform(self.df.loc[self.current_step, "Open"], self.df.loc[self.current_step, "close"])
         action_type = action
 
-        self.current_price = self.df_reward.close[self.current_step]
+        try:
+            self.current_price = self.df_reward.close[self.current_step]
+        except:
+            print('ISSUE IN _take_action')
+            print(self.df_reward.close)
+            print(self.current_step)
+            quit()
+        # print(self.current_step, self.start_step)
 
         comission = 0.02 # The comission is applied to both buy and sell
         amount = 0.3
@@ -102,9 +118,10 @@ class StockTradingEnv2(gym.Env):
         # Execute one time step within the environment
         self._take_action(action)
         self.current_date = self.df_reward.date[self.current_step]
-        
+
+
         # Check if there are no more steps in the data or we have met the maximum amount of steps
-        if self.current_step == self.start_step + self.max_steps - 1:
+        if self.current_step == self.start_step + self.max_steps:
             delay_modifier = 1
             done = True
         else:
@@ -153,7 +170,7 @@ class StockTradingEnv2(gym.Env):
             done = self.net_worth <= 0
 
         # Iterate step
-        self.batch_iteration += 1
+        self.iteration_step += 1
         self.current_step += 1
 
         return obs, reward, done
@@ -183,7 +200,6 @@ class StockTradingEnv2(gym.Env):
             glob.glob('data/staged/staged_batch_*.pkl')
             )
 
-        random_staged_batch_path = 'data/staged/staged_batch_0.pkl'
         # Load the batch
         with open(random_staged_batch_path, 'rb') as handle:
             staged = pickle.load(handle)
@@ -194,29 +210,32 @@ class StockTradingEnv2(gym.Env):
 
         # Parameters
         self.len_this_batch = len(self.df_reward_batch)
-        self.max_steps = len(self.staged_obs_batch[0]) - 1 
+        self.batch_numbering_list = list(range(self.len_this_batch))
+        random.shuffle(self.batch_numbering_list)
+        self.max_steps = len(self.staged_obs_batch[0]) - 1
 
 
 
     def _next_in_batch(self):
 
-        # Load batch if not loaded
-        self.load_batch = True
+        # Load batch if not loaded        
         if self.load_batch:
             self._load_staged_batch()
             self.load_batch = False
-            self.iteration = 0
+            self.iteration = 0 #Used to iterate obs in 
 
         # If on the last iteration in batch, load a new batch next time
         if self.iteration == self.len_this_batch-1:
             self.load_batch = True
 
         # Extract df_reward and obs next iteration
-        self.df_reward = self.df_reward_batch[self.iteration]
-        self.staged_obs = self.staged_obs_batch[self.iteration]
+        random_iteration = self.batch_numbering_list[self.iteration]
+        self.df_reward = self.df_reward_batch[random_iteration]
+        self.staged_obs = self.staged_obs_batch[random_iteration]
 
         # Step iteration
         self.iteration += 1
+
 
 
     def reset(self):
@@ -238,9 +257,9 @@ class StockTradingEnv2(gym.Env):
         # Set initial values
         self._next_in_batch()
         self.current_step = self.df_reward.index[0]
-        self.start_step = self.df_reward.index[0]
+        self.start_step = self.current_step
+        self.iteration_step = 0 #Counts steps from 0
         self.initial_price = self.df_reward.close[self.start_step]
-        self.batch_iteration = 0
 
         return self._next_observation()
 

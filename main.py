@@ -1,6 +1,6 @@
 import sys
 
-from core import Agent, DataCluster, ModelAssessment, StockTradingEnv
+from core import Agent, DataCluster, ModelAssessment, StockTradingEnv2
 from core.tools import safe_div, tic, toc
 
 from tqdm import tqdm
@@ -14,15 +14,16 @@ from pathlib import Path
 import json
 import logging
 import random
+import keras.backend as K
 
 
 # Pre-trained network to load
 PT_NETWORK = 1619098339
 
 # Environment settings
-EPISODES = 20_000
-MAX_STEPS = 90 #Max steps taken by the env until the episode ends
-num_stocks = 1
+EPISODES = int(100_000)
+# MAX_STEPS = 90 #Max steps taken by the env until the episode ends
+num_stocks = 100
 WAVELET_SCALES = 100 #keep - number of frequecys used the wavelet transform
 
 # Exploration settings
@@ -32,7 +33,7 @@ MIN_EPSILON = 1e-6
 
 #  Stats settings
 AGGREGATE_STATS_EVERY = 1  #keep - episodes
-EPOCH_SIZE = 50
+EPOCH_SIZE = 500
 
 
 class Trader:
@@ -61,12 +62,7 @@ class Trader:
         self.agent.load_network(PT_NETWORK)
 
         # Environment
-        self.env = StockTradingEnv(
-            self.collection,
-            look_back_window=self.num_time_steps,
-            max_steps=MAX_STEPS,
-            static_initial_step=0
-            )
+        self.env = StockTradingEnv2()
 
         # Epsilon
         self.epsilon_steps = \
@@ -179,6 +175,7 @@ class Trader:
             # Update tensorboard step every episode
             self.agent.tensorboard.step = episode
 
+
             # Reset episode reward and step number
             self.episode_reward = list()
             self.reward_action = [0, 0, 0]
@@ -189,7 +186,7 @@ class Trader:
 
             # Reset flag and start iterating until episode ends
             done = False
-            
+            timings = {'GETQ':0 ,'STEP':0 ,'TRAIN':0}
             while not done:
 
                 # This part stays mostly the same, the change is to query a model for Q values
@@ -202,6 +199,7 @@ class Trader:
 
                 # STEP ENV
                 new_state, reward, done = self.env.step(action)
+                
 
                 # Save reward and action
                 self.reward_action[action] += reward
@@ -218,6 +216,8 @@ class Trader:
                 current_state = new_state
                 step += 1
 
+            toc()
+
             # Save model
             if not episode % EPOCH_SIZE or episode == 1:
                 self._save_model(episode)
@@ -231,7 +231,6 @@ class Trader:
 
             # Decay epsilon
             self.epsilon = self.epsilon_steps[episode]
-
 
 
     def _render(self, episode):
@@ -266,7 +265,10 @@ class Trader:
         epoch_id = int(time.time())
         self.last_model_name = f'{epoch_id}_EPS{episode}of{EPISODES}.model'
         self.agent.model.save(self.folder / self.last_model_name)
-        self._model_assessment(episode)
+        try:
+            self._model_assessment(episode)
+        except:
+            pass
 
 
 

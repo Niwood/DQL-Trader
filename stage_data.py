@@ -61,8 +61,8 @@ class Stager:
 
     def run(self):
 
-        batches = 25
-        iterations_per_batch = 45
+        batches = 50
+        iterations_per_batch = 500
         
         for batch in range(batches):
 
