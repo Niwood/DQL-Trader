@@ -88,6 +88,8 @@ class App:
                 return pd.read_pickle(self.models_folder / str(self.model_id) / 'estats.pkl')
             except:
                 return pd.DataFrame()
+        
+        # @st.cache
         def load_astats():
             try:
                 return pd.read_pickle(self.models_folder / str(self.model_id) / 'astats.pkl')

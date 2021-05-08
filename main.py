@@ -18,10 +18,10 @@ import keras.backend as K
 
 
 # Pre-trained network to load
-PT_NETWORK = 1619098339
+PT_NETWORK = 1620378939
 
 # Environment settings
-EPISODES = int(100_000)
+EPISODES = int(20_000)
 # MAX_STEPS = 90 #Max steps taken by the env until the episode ends
 num_stocks = 100
 WAVELET_SCALES = 100 #keep - number of frequecys used the wavelet transform
@@ -32,7 +32,7 @@ epsilon_plateau = 0.1
 MIN_EPSILON = 1e-6
 
 #  Stats settings
-AGGREGATE_STATS_EVERY = 1  #keep - episodes
+AGGREGATE_STATS_EVERY = 100  #keep - episodes
 EPOCH_SIZE = 500
 
 
@@ -186,7 +186,8 @@ class Trader:
 
             # Reset flag and start iterating until episode ends
             done = False
-            timings = {'GETQ':0 ,'STEP':0 ,'TRAIN':0}
+            
+            tic()
             while not done:
 
                 # This part stays mostly the same, the change is to query a model for Q values

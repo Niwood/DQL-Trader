@@ -43,10 +43,10 @@ class Agent:
 
         # Constants
         self.DISCOUNT = 0.99
-        self.REPLAY_MEMORY_SIZE = 30_000  # How many last steps to keep for model training
+        self.REPLAY_MEMORY_SIZE = 100_000  # How many last steps to keep for model training
         self.MIN_REPLAY_MEMORY_SIZE = 0.3 * self.REPLAY_MEMORY_SIZE  # Minimum number of steps in a memory to start training
         self.MINIBATCH_SIZE = 32  # How many steps (samples) to use for training
-        self.UPDATE_TARGET_EVERY = 5  # Terminal states (end of episodes)
+        self.UPDATE_TARGET_EVERY = 100  # Terminal states (end of episodes)
 
         # Main model - gets trained every step
         self.st_shape = model_shape[0]
@@ -82,11 +82,11 @@ class Agent:
         st = GRU(8, return_sequences=True)(st_head)
         st = Dropout(0.2)(st)
 
-        st = GRU(8, return_sequences=True)(st)
+        st = GRU(8, return_sequences=False)(st)
         st = Dropout(0.2)(st)
 
-        st = GRU(4, return_sequences=False)(st)
-        st = Dropout(0.2)(st)
+        # st = GRU(4, return_sequences=False)(st)
+        # st = Dropout(0.2)(st)
 
         st = Dense(32)(st)
 
@@ -97,13 +97,13 @@ class Agent:
         lt = MaxPooling2D(pool_size=4, strides=(1,1), padding='valid')(lt)
         lt = BatchNormalization()(lt)
 
-        lt = Conv2D(filters=4, kernel_size=2, padding='valid', activation='relu')(lt)
-        lt = MaxPooling2D(pool_size=2, padding='valid')(lt)
-        lt = BatchNormalization()(lt)
+        # lt = Conv2D(filters=4, kernel_size=2, padding='valid', activation='relu')(lt)
+        # lt = MaxPooling2D(pool_size=2, padding='valid')(lt)
+        # lt = BatchNormalization()(lt)
         
-        lt = Conv2D(filters=4, kernel_size=4, padding='valid', activation='relu')(lt)
-        lt = MaxPooling2D(pool_size=2, padding='valid')(lt)
-        lt = BatchNormalization()(lt)
+        # lt = Conv2D(filters=4, kernel_size=4, padding='valid', activation='relu')(lt)
+        # lt = MaxPooling2D(pool_size=2, padding='valid')(lt)
+        # lt = BatchNormalization()(lt)
 
         lt = Flatten(name='ltflatten')(lt)
         lt = Dense(128)(lt)
@@ -121,8 +121,8 @@ class Agent:
         tail = Dense(32)(tail)
         tail = Dropout(0.2)(tail)
 
-        tail = Dense(8)(tail)
-        tail = Dropout(0.2)(tail)
+        # tail = Dense(8)(tail)
+        # tail = Dropout(0.2)(tail)
 
         ''' MULTI OUTPUTS '''
         action_prediction = Dense(3, activation='softmax')(tail)
@@ -130,7 +130,7 @@ class Agent:
         # Compile model
         model = Model(inputs=[st_head, lt_head], outputs=action_prediction)
 
-        opt = Adam(learning_rate=1e-6)
+        opt = Adam(learning_rate=1e-7)
 
         # Cost of missclassification
         self.cost_matrix = np.ones((3,3))

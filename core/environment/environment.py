@@ -221,20 +221,20 @@ class StockTradingEnv(gym.Env):
             - The asset goes down and we have invested
         '''
 
-        _teomax_net_worth = self.df_reward.teomax.loc[self.current_step] * INITIAL_ACCOUNT_BALANCE
-        reward = self.net_worth / _teomax_net_worth
+        # _teomax_net_worth = self.df_reward.teomax.loc[self.current_step] * INITIAL_ACCOUNT_BALANCE
+        # reward = self.net_worth / _teomax_net_worth
 
         if action == 2: # sell
             # reward += -1 * copysign(current_lowess_grad2_scaled, current_lowess_grad2) # Down/Up shift 
             # reward -= abs(current_lowess_grad_scaled) # Less reward if not triggered on max/min points
-            reward *= 1 - self.sell_triggers / self.max_steps # More triggers causes less reward
-            # pass
+            # reward *= 1 - self.sell_triggers / self.max_steps # More triggers causes less reward
+            pass
             
         elif action == 1: # buy
             # reward += copysign(current_lowess_grad2_scaled, current_lowess_grad2) # Down/Up shift
             # reward -= abs(current_lowess_grad_scaled) # Less reward if not triggered on max/min points
-            reward *= 1 - self.buy_triggers / self.max_steps  # More triggers causes less reward
-            # pass
+            # reward *= 1 - self.buy_triggers / self.max_steps  # More triggers causes less reward
+            pass
 
         elif action == 0: # hold
             # reward += ( 1 - INITIAL_ACCOUNT_BALANCE / self.net_worth) * 50 # 14 day trailing  
@@ -242,7 +242,7 @@ class StockTradingEnv(gym.Env):
             # reward = 0
             pass
 
-
+        reward = self.net_worth
         reward *= delay_modifier
 
 

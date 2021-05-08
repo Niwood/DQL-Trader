@@ -22,10 +22,10 @@ import pandas_ta as ta
 
 
 # Environment settings
-NUM_STOCKS = 1
+NUM_STOCKS = 0
 WAVELET_SCALES = 100 #keep - number of frequecys used the wavelet transform
 
-SAMPLE_SIZE = 10
+SAMPLE_SIZE = 10_000
 PT_EPOCHS = 300
 
 class Trainer:
