@@ -8,7 +8,6 @@ from matplotlib import pyplot as plt
 from statsmodels.nonparametric.smoothers_lowess import lowess as low
 import pywt
 
-from backtesting.test import GOOG
 from math import copysign
 from core.tools import safe_div
 pd.options.mode.chained_assignment = None

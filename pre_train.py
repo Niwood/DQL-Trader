@@ -17,7 +17,6 @@ import random
 
 import keras.backend as K
 from sklearn.preprocessing import MinMaxScaler
-from backtesting.test import GOOG
 import pandas_ta as ta
 
 

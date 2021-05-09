@@ -2,7 +2,6 @@ from sklearn.preprocessing import MinMaxScaler
 import pandas as pd
 import numpy as np
 import pandas_ta as ta
-from backtesting.test import GOOG
 import matplotlib.pyplot as plt
 import random
 from pathlib import Path
@@ -32,37 +31,43 @@ class DataCluster:
         self.collection = list()
 
         if dataset == 'google':
-            self.collection.append(
-                DataPack(dataframe=GOOG, remove_features=remove_features, wavelet_scales=wavelet_scales, num_time_steps=num_time_steps)
-                )
+            # self.collection.append(
+            #     DataPack(dataframe=GOOG, remove_features=remove_features, wavelet_scales=wavelet_scales, num_time_steps=num_time_steps)
+            #     )
+            print('GOOG DATASET DEPRECATED -> QUIT')
+            quit()
 
         elif dataset == 'sine':
-            df = GOOG
-            sin_array = np.linspace(0, 200*np.pi, len(df))
-            price = (np.sin(sin_array)*3 + 10) + np.random.normal(0,0.3,len(df))
-            df.Close = price
-            df.Open = price + np.random.normal(0,0.3,len(df))
-            df.High = price * 1.02
-            df.Low = price * 0.996
-            df.Volume *= df.Close
-            self.collection.append(
-                DataPack(dataframe=df, remove_features=remove_features, wavelet_scales=wavelet_scales, num_time_steps=num_time_steps)
-                )
+            # df = GOOG
+            # sin_array = np.linspace(0, 200*np.pi, len(df))
+            # price = (np.sin(sin_array)*3 + 10) + np.random.normal(0,0.3,len(df))
+            # df.Close = price
+            # df.Open = price + np.random.normal(0,0.3,len(df))
+            # df.High = price * 1.02
+            # df.Low = price * 0.996
+            # df.Volume *= df.Close
+            # self.collection.append(
+            #     DataPack(dataframe=df, remove_features=remove_features, wavelet_scales=wavelet_scales, num_time_steps=num_time_steps)
+            #     )
+            print('GOOG DATASET DEPRECATED -> QUIT')
+            quit()
 
         elif dataset == 'random':
-            df = GOOG
-            price = np.ones(len(df))
-            for _ in range(5):
-                sin_array = np.linspace(0, random.randint(50, 300)*np.pi, len(df))
-                price += (np.sin(sin_array)*3) + np.random.normal(0,0.3,len(df))
-            df.Close = price
-            df.Open = price + np.random.normal(0,0.3,len(df))
-            df.High = price * 1.02
-            df.Low = price * 0.996
-            df.Volume *= df.Close
-            self.collection.append(
-                DataPack(dataframe=df, remove_features=remove_features, wavelet_scales=wavelet_scales, num_time_steps=num_time_steps)
-                )
+            # df = GOOG
+            # price = np.ones(len(df))
+            # for _ in range(5):
+            #     sin_array = np.linspace(0, random.randint(50, 300)*np.pi, len(df))
+            #     price += (np.sin(sin_array)*3) + np.random.normal(0,0.3,len(df))
+            # df.Close = price
+            # df.Open = price + np.random.normal(0,0.3,len(df))
+            # df.High = price * 1.02
+            # df.Low = price * 0.996
+            # df.Volume *= df.Close
+            # self.collection.append(
+            #     DataPack(dataframe=df, remove_features=remove_features, wavelet_scales=wavelet_scales, num_time_steps=num_time_steps)
+            #     )
+            print('GOOG DATASET DEPRECATED -> QUIT')
+            quit()
 
         elif dataset == 'realmix':
 
