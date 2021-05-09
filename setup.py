@@ -5,7 +5,7 @@ from tqdm import tqdm
 
 
 '''
-MAKE DATA DIRS
+MAKE DIRS
 '''
 DATA_DIR = 'TEST_DIR/'
 try:
@@ -16,6 +16,12 @@ except Exception as e:
     print(e)
     quit()
 
+
+try:
+    sh.mkdir('models')
+    sh.mkdir('pre_trained_models')
+except Exception as e:
+    print(e)
 
 
 '''
