@@ -14,7 +14,7 @@ try:
     sh.mkdir(DATA_DIR + 'stock')
 except Exception as e:
     print(e)
-    quit()
+    # quit()
 
 
 try:
@@ -29,20 +29,25 @@ LIST AVAILABLE FILES IN S3 BUCKET
 '''
 BUCKET = 'demo-store-123'
 s3_rsc = boto3.resource('s3')
-bucket = s3_rsc.Bucket(BUCKET).objects.filter(Prefix='stock/').all()
+bucket_stocks = s3_rsc.Bucket(BUCKET).objects.filter(Prefix='stock/').all()
+bucket_staged = s3_rsc.Bucket(BUCKET).objects.filter(Prefix='staged/').all()
 
-all_files = list()
-for i in bucket:
-    all_files.append(i.key.split('/')[1])
+all_stock_files = list()
+for i in bucket_stocks:
+    all_stock_files.append(i.key.split('/')[1])
+    
+all_staged_files = list()
+for i in bucket_staged:
+    all_staged_files.append(i.key.split('/')[1])
 
 
 
 '''
-DOWNLOAD THE FILES FROM BUCKET
+DOWNLOAD THE STOCK FILES
 '''
 s3 = boto3.client('s3')
 counter = 0
-for _file in tqdm(all_files):
+for _file in tqdm(all_stock_files):
     s3.download_file(
         BUCKET,
         'stock/' + _file,
@@ -51,3 +56,13 @@ for _file in tqdm(all_files):
     counter += 1
     if counter == 5:
         break
+
+
+'''
+DOWNLOAD THE STAGED FILES
+'''
+for _file in tqdm(all_staged_files):
+    s3.download_file(
+        BUCKET,
+        'staged/' + _file,
+        DATA_DIR + 'staged/' + _file)
