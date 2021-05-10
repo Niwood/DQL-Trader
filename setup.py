@@ -7,7 +7,7 @@ from tqdm import tqdm
 '''
 MAKE DIRS
 '''
-DATA_DIR = 'TEST_DIR/'
+DATA_DIR = 'data/'
 try:
     sh.mkdir(DATA_DIR)
     sh.mkdir(DATA_DIR + 'staged')
