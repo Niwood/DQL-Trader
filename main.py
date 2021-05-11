@@ -21,7 +21,7 @@ import keras.backend as K
 PT_NETWORK = 1620378939
 
 # Environment settings
-EPISODES = int(20_000)
+EPISODES = int(5_000)
 # MAX_STEPS = 90 #Max steps taken by the env until the episode ends
 num_stocks = 100
 WAVELET_SCALES = 100 #keep - number of frequecys used the wavelet transform
@@ -32,7 +32,7 @@ epsilon_plateau = 0.1
 MIN_EPSILON = 1e-6
 
 #  Stats settings
-AGGREGATE_STATS_EVERY = 100  #keep - episodes
+AGGREGATE_STATS_EVERY = 1  #keep - episodes
 EPOCH_SIZE = 500
 
 
@@ -89,14 +89,14 @@ class Trader:
             'avgAmount'
             ]
         self.estats = pd.DataFrame(
-            0,
+            np.nan,
             index=np.arange(1, EPISODES+1),
             columns=stats)
         self.estats.index.name = 'Episode'
 
         astats_index = np.append( np.array([1]) , np.arange(0, EPISODES+1, EPOCH_SIZE)[1::] )
         self.astats = pd.DataFrame(
-            0,
+            np.nan,
             index=astats_index,
             columns=[
                 'lastReward',

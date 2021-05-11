@@ -154,7 +154,7 @@ class StockTradingEnv(gym.Env):
         action_type = action
 
         self.current_price = self.df.loc[self.current_step, "close"]
-        comission = 0.02 # The comission is applied to both buy and sell
+        comission = 0.01 # The comission is applied to both buy and sell
         amount = 0.3
 
         if action_type == 1:

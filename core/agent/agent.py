@@ -63,6 +63,7 @@ class Agent:
 
         # Parameters
         self.replay_memory = deque(maxlen=self.REPLAY_MEMORY_SIZE)
+        self.replay_priority = deque(maxlen=self.REPLAY_MEMORY_SIZE)
         self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/log-{1}")
         self.target_update_counter = 0
         self.elapsed = 0
@@ -273,6 +274,37 @@ class Agent:
     def update_replay_memory(self, transition):
         # transition = (current_state, action, reward, new_state, done)
         self.replay_memory.append(transition)
+        self.replay_priority.append(max(self.replay_priority, default=1))
+
+    def get_replay_priority(self, priority_scale):
+        scaled_priorities = np.array(self.replay_priority) ** priority_scale
+        sample_priorities = scaled_priorities / sum(scaled_priorities)
+        return sample_priorities
+
+    def get_importance(self, probabilities):
+        # Importance scales down the update step during training also called
+        # importance sampling weight that is dependent on the prob they were sampled with
+        importance = 1/len(self.replay_memory) * 1/probabilities
+        importance_normalized = importance / max(importance)
+        return importance_normalized
+
+    def sample_prioritized_replay_memory(self, priority_scale=1.0):
+        # UNIFORM (OLD) SAMPLING: minibatch = random.sample(self.replay_memory, self.MINIBATCH_SIZE)
+        
+        # Get the probabilities of the replay buffer
+        sample_priorities = self.get_replay_priority(priority_scale)
+
+        # Sample replay buffer indicies based on sample probs
+        sample_indices = random.choices(range(len(self.replay_memory)), k=self.MINIBATCH_SIZE, weights=sample_priorities)
+
+        # Get the corresponding experiences based on the sampled indicies
+        minibatch = np.array(self.replay_memory)[sample_indices]
+
+        # Get importance
+        importance = self.get_importance(sample_priorities[sample_indices])
+
+        return map(list, zip(*minibatch)), importance, sample_indices
+
 
 
     def predict(self, states, model, minibatch=False):
@@ -304,7 +336,7 @@ class Agent:
         self.t0 = time.time()
 
         # Get a minibatch of random samples from memory replay table
-        minibatch = random.sample(self.replay_memory, self.MINIBATCH_SIZE)
+        minibatch = self.sample_prioritized_replay_memory()
 
         # Get current states from minibatch, then query NN model for Q values
         # current state will have the format (MINIBATCH_SIZE, timesteps, features)
@@ -323,6 +355,8 @@ class Agent:
         future_qs_list = self.predict(new_current_states, self.target_model, minibatch=True)
         
 
+
+
         # Enumerate the batches
         _X_st = list()
         _X_lt = list()
@@ -335,6 +369,12 @@ class Agent:
                 new_q = reward + self.DISCOUNT * max_future_q
             else:
                 new_q = reward
+
+            # Calculate the priority for the observation
+            error = reward - new_q
+            priority = abs(error) + 0.1 #0.1 as an offset so the priority don't reach 0
+            quit()
+
 
             # Update Q value for given state
             current_qs = current_qs_list[index]
@@ -449,25 +489,19 @@ if __name__ == '__main__':
         model_shape=(st_shape, lt_shape),
         num_time_steps=num_steps)
 
-    # agent.pre_train(collection, cached_data=True, epochs=200, sample_size=10, lr_preTrain=1e-3)
-    # print(f' compare_initial_weights: {agent.compare_initial_weights()}')
-    # print(agent.conf_mat)
-    print(agent.model.summary())
+    # ma = ModelAssessment(
+    #     collection=collection,
+    #     model_shape=(st_shape, lt_shape),
+    #     num_time_steps=num_steps
+    #     )
+    # ma.model = agent.model
+
+    # for i in range(10):
+    #     print('RENDER:', i)
+    #     ma.simulate()
+    #     ma.render()
+    #     print('-'*10)
     # quit()
-
-    ma = ModelAssessment(
-        collection=collection,
-        model_shape=(st_shape, lt_shape),
-        num_time_steps=num_steps
-        )
-    ma.model = agent.model
-
-    for i in range(10):
-        print('RENDER:', i)
-        ma.simulate()
-        ma.render()
-        print('-'*10)
-    quit()
 
     current_step = env.reset()
     state, reward, done = env.step(0)
