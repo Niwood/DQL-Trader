@@ -86,7 +86,8 @@ class Trader:
             'holdReward',
             'sellReward',
             'buyReward',
-            'avgAmount'
+            'avgAmount',
+            'episodeTime'
             ]
         self.estats = pd.DataFrame(
             np.nan,
@@ -160,10 +161,12 @@ class Trader:
 
     def run(self):
 
-        # Iterate over episodes
-        last_iteration_time = datetime.fromtimestamp(0)
+        # Define iterator and track elapsed time
         episode_iter = tqdm(range(1, EPISODES + 1), ascii=True, unit='episode')
+        last_iteration_time = datetime.fromtimestamp(episode_iter.start_t)
+        self.episode_times = list()
 
+        # Iterate over episodes
         for episode in episode_iter:
 
             # Slice estats for this episode for simplicity
@@ -228,12 +231,18 @@ class Trader:
                 # Set default values to evaluation stats
                 self._estats.loc['TotTrainTime'] = round(self.train_time,1)
 
+            # Decay epsilon
+            self.epsilon = self.epsilon_steps[episode]
+
+            # Time tracking
+            iteration_time = datetime.fromtimestamp(episode_iter.last_print_t)
+            datetime_delta = iteration_time + last_iteration_time
+            self.delta_time = datetime_delta.seconds + datetime_delta.microseconds/1e6
+            last_iteration_time = iteration_time
+
             # Render
             if not episode % AGGREGATE_STATS_EVERY:
                 self._render(episode)
-
-            # Decay epsilon
-            self.epsilon = self.epsilon_steps[episode]
 
 
     def _render(self, episode):
@@ -253,6 +262,7 @@ class Trader:
         self._estats.loc['holdReward'] = round( safe_div(self.reward_action[0], self.actions.count(0)) ,3)
         self._estats.loc['buyReward'] = round( safe_div(self.reward_action[1], self.actions.count(1)) ,3)
         self._estats.loc['sellReward'] = round( safe_div(self.reward_action[2], self.actions.count(2)) ,3)
+        self._estats.loc['episodeTime'] = self.delta_time
 
         # Print episode stats
         self.estats.loc[episode] = self._estats
