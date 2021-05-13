@@ -24,6 +24,7 @@ from plotly.subplots import make_subplots
 # streamlit run app.py
 
 
+MAX_ESTATS_ROWS = 500
 
 class App:
     def __init__(self):
@@ -61,6 +62,7 @@ class App:
 
         # Model option
         all_model_date = [datetime.fromtimestamp(int(x.stem)) for x in self.models_folder.glob('*/')]
+        all_model_date.sort()
         all_model_date.reverse()
         self.model_date = st.sidebar.selectbox("Model", all_model_date)
         self.model_id = int(datetime.timestamp(self.model_date))
@@ -74,20 +76,29 @@ class App:
 
         # Refresh
         if st.sidebar.button('Refresh'):
-            # self.refresh_thread.start()
             pass
-        # else:
-        #     try: self.refresh_thread.join()
-        #     except: pass
-        
+
+        # Refresh
+        delete_dropdown = st.sidebar.beta_expander('Delete model')
+        # delete_button = st.
+        if delete_dropdown.button('Delete model'):
+            
+            pass
+
+
 
     def training(self):
         # @st.cache
         def load_estats():
             try:
-                return pd.read_pickle(self.models_folder / str(self.model_id) / 'estats.pkl')
+                df = pd.read_pickle(self.models_folder / str(self.model_id) / 'estats.pkl')
             except:
-                return pd.DataFrame()
+                df = pd.DataFrame()
+
+            if len(df) > MAX_ESTATS_ROWS:
+                every_n_row = int(len(df) / MAX_ESTATS_ROWS)
+                return df.iloc[::every_n_row, :]
+            else: return df
         
         # @st.cache
         def load_astats():
@@ -187,8 +198,7 @@ class App:
         # AXES
         fig.update_xaxes(
             title_text = "Episode",
-            zeroline = True,
-            range = [0,len(estats)])
+            zeroline = True)
         fig.update_layout(template="plotly_white")
         episode_statistics.plotly_chart(fig, use_container_width=True)
 
@@ -262,10 +272,10 @@ class App:
         fig.update_xaxes(
             title_text = "Episode",
             zeroline = True,
-            range = [0,len(estats)], row=2, col=1)
+            row=2, col=1)
         fig.update_xaxes(
             zeroline = True,
-            range = [0,len(estats)], row=1, col=1)
+            row=1, col=1)
         fig.update_layout(template="plotly_white")
         episode_statistics.plotly_chart(fig, use_container_width=True)
 
@@ -345,8 +355,7 @@ class App:
         # AXES
         fig.update_xaxes(
             title_text = "Episode",
-            zeroline = True,
-            range = [0,len(estats)])
+            zeroline = True)
         fig.update_layout(template="plotly_white")
         episode_statistics.plotly_chart(fig, use_container_width=True)
 

@@ -2,7 +2,7 @@ from keras.models import Sequential
 from keras.layers import LSTM, GRU, Input
 from keras.layers.core import Dense, Dropout, Activation
 from keras.optimizers import RMSprop, Adam, SGD
-from keras.losses import SparseCategoricalCrossentropy, CategoricalCrossentropy
+from keras.losses import SparseCategoricalCrossentropy, CategoricalCrossentropy, MeanSquaredError
 from keras.layers.merge import concatenate
 from keras.layers import Flatten, BatchNormalization, Concatenate
 from keras.layers.convolutional import Conv1D, Conv2D
@@ -27,6 +27,8 @@ import pickle
 import math
 from pathlib import Path
 
+from core.tools import safe_div, tic, toc
+
 import tensorflow as tf
 physical_devices = tf.config.list_physical_devices('GPU') 
 tf.config.experimental.set_memory_growth(physical_devices[0], True)
@@ -45,7 +47,7 @@ class Agent:
         self.DISCOUNT = 0.99
         self.REPLAY_MEMORY_SIZE = 100_000  # How many last steps to keep for model training
         self.MIN_REPLAY_MEMORY_SIZE = 0.3 * self.REPLAY_MEMORY_SIZE  # Minimum number of steps in a memory to start training
-        self.MINIBATCH_SIZE = 32  # How many steps (samples) to use for training
+        self.MINIBATCH_SIZE = 8  # How many steps (samples) to use for training
         self.UPDATE_TARGET_EVERY = 100  # Terminal states (end of episodes)
 
         # Main model - gets trained every step
@@ -68,6 +70,9 @@ class Agent:
         self.target_update_counter = 0
         self.elapsed = 0
         self.conf_mat = np.array([])
+
+        # MSE to calculate the error for prioritized replay priority
+        self.mse = MeanSquaredError(reduction=tf.keras.losses.Reduction.NONE)
 
         # Assertions
         # assert model_shape==tuple() , 'Missing model shape'
@@ -276,34 +281,42 @@ class Agent:
         self.replay_memory.append(transition)
         self.replay_priority.append(max(self.replay_priority, default=1))
 
-    def get_replay_priority(self, priority_scale):
+    def get_replay_probabilities(self, priority_scale):
         scaled_priorities = np.array(self.replay_priority) ** priority_scale
-        sample_priorities = scaled_priorities / sum(scaled_priorities)
-        return sample_priorities
+        sample_probabilities = scaled_priorities / sum(scaled_priorities)
+        return sample_probabilities
 
     def get_importance(self, probabilities):
         # Importance scales down the update step during training also called
         # importance sampling weight that is dependent on the prob they were sampled with
+        # The weight will “slow down” the learning of certain experience samples with respect to others
         importance = 1/len(self.replay_memory) * 1/probabilities
         importance_normalized = importance / max(importance)
         return importance_normalized
 
+    def set_priorities(self, indices, errors, offset=0.1):
+        for i,e in zip(indices, errors):
+            self.replay_priority[i] = abs(e) + offset
+
     def sample_prioritized_replay_memory(self, priority_scale=1.0):
-        # UNIFORM (OLD) SAMPLING: minibatch = random.sample(self.replay_memory, self.MINIBATCH_SIZE)
+        # UNIFORM (OLD) SAMPLING:
+        # minibatch = random.sample(self.replay_memory, self.MINIBATCH_SIZE)
         
         # Get the probabilities of the replay buffer
-        sample_priorities = self.get_replay_priority(priority_scale)
+        sample_probabilities = self.get_replay_probabilities(priority_scale)
 
         # Sample replay buffer indicies based on sample probs
-        sample_indices = random.choices(range(len(self.replay_memory)), k=self.MINIBATCH_SIZE, weights=sample_priorities)
+        # To increase performance: SumTree data structure
+        sample_indices = random.choices(range(len(self.replay_memory)), k=self.MINIBATCH_SIZE, weights=sample_probabilities)
 
         # Get the corresponding experiences based on the sampled indicies
         minibatch = np.array(self.replay_memory)[sample_indices]
 
-        # Get importance
-        importance = self.get_importance(sample_priorities[sample_indices])
+        # Get importance weights
+        importance = self.get_importance(sample_probabilities[sample_indices])
 
-        return map(list, zip(*minibatch)), importance, sample_indices
+        # return map(list, zip(*minibatch)), importance, sample_indices
+        return minibatch, importance, sample_indices
 
 
 
@@ -335,8 +348,8 @@ class Agent:
         # Timer
         self.t0 = time.time()
 
-        # Get a minibatch of random samples from memory replay table
-        minibatch = self.sample_prioritized_replay_memory()
+        # Get a minibatch of random samples from memory replay
+        minibatch, importance, sample_indices = self.sample_prioritized_replay_memory()
 
         # Get current states from minibatch, then query NN model for Q values
         # current state will have the format (MINIBATCH_SIZE, timesteps, features)
@@ -344,7 +357,6 @@ class Agent:
             'st':[transition[0]['st'] for transition in minibatch],
             'lt':[transition[0]['lt'] for transition in minibatch]}
         current_qs_list = self.predict(current_states, self.model, minibatch=True)
-
         
         # Get future states from minibatch, then query NN model for Q values
         # When using target network, query it, otherwise main network should be queried
@@ -353,9 +365,9 @@ class Agent:
             'st':[transition[3]['st'] for transition in minibatch],
             'lt':[transition[3]['lt'] for transition in minibatch]}
         future_qs_list = self.predict(new_current_states, self.target_model, minibatch=True)
-        
 
-
+        # Calculate the errors
+        errors = self.mse(future_qs_list, current_qs_list).numpy()
 
         # Enumerate the batches
         _X_st = list()
@@ -370,12 +382,6 @@ class Agent:
             else:
                 new_q = reward
 
-            # Calculate the priority for the observation
-            error = reward - new_q
-            priority = abs(error) + 0.1 #0.1 as an offset so the priority don't reach 0
-            quit()
-
-
             # Update Q value for given state
             current_qs = current_qs_list[index]
             current_qs[action] = new_q
@@ -385,8 +391,17 @@ class Agent:
             _X_lt.append(current_state['lt'])
             _y.append(current_qs)
 
-        # Fit on all samples as one batch, log only on terminal state
-        self.model.fit([np.array(_X_st), np.array(_X_lt)], np.array(_y), batch_size=self.MINIBATCH_SIZE, verbose=0, shuffle=False, callbacks=None)
+
+        # Train the model
+        self.model.train_on_batch(
+            [np.array(_X_st), np.array(_X_lt)],
+            np.array(_y),
+            sample_weight=importance)
+        
+
+        # Update the priorities
+        self.set_priorities(sample_indices, errors)
+
 
         # Update target network counter every episode
         if terminal_state:

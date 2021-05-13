@@ -33,7 +33,7 @@ MIN_EPSILON = 1e-6
 
 #  Stats settings
 AGGREGATE_STATS_EVERY = 1  #keep - episodes
-EPOCH_SIZE = 500
+EPOCH_SIZE = 100
 
 
 class Trader:
@@ -161,7 +161,10 @@ class Trader:
     def run(self):
 
         # Iterate over episodes
-        for episode in tqdm(range(1, EPISODES + 1), ascii=True, unit='episode'):
+        last_iteration_time = datetime.fromtimestamp(0)
+        episode_iter = tqdm(range(1, EPISODES + 1), ascii=True, unit='episode')
+
+        for episode in episode_iter:
 
             # Slice estats for this episode for simplicity
             self._estats = self.estats.loc[episode]
@@ -187,7 +190,7 @@ class Trader:
             # Reset flag and start iterating until episode ends
             done = False
             
-            tic()
+            
             while not done:
 
                 # This part stays mostly the same, the change is to query a model for Q values
@@ -217,7 +220,6 @@ class Trader:
                 current_state = new_state
                 step += 1
 
-            toc()
 
             # Save model
             if not episode % EPOCH_SIZE or episode == 1:
