@@ -98,6 +98,9 @@ class StockTradingEnv2(gym.Env):
             self.total_sales_value += self.shares_sold * self.current_price
             self.sell_triggers += 1
 
+        elif action_type == 0:
+            self.hold_triggers += 1
+
         # Save amount
         self.amounts.append(amount)
 
@@ -144,19 +147,20 @@ class StockTradingEnv2(gym.Env):
         if action == 2: # sell
             # reward += -1 * copysign(current_lowess_grad2_scaled, current_lowess_grad2) # Down/Up shift 
             # reward -= abs(current_lowess_grad_scaled) # Less reward if not triggered on max/min points
-            reward *= 1 - self.sell_triggers / self.max_steps # More triggers causes less reward
-            # pass
+            # reward *= 1 - self.sell_triggers / self.max_steps # More triggers causes less reward
+            pass
             
         elif action == 1: # buy
             # reward += copysign(current_lowess_grad2_scaled, current_lowess_grad2) # Down/Up shift
             # reward -= abs(current_lowess_grad_scaled) # Less reward if not triggered on max/min points
-            reward *= 1 - self.buy_triggers / self.max_steps  # More triggers causes less reward
-            # pass
+            # reward *= 1 - self.buy_triggers / self.max_steps  # More triggers causes less reward
+            pass
 
         elif action == 0: # hold
             # reward += ( 1 - INITIAL_ACCOUNT_BALANCE / self.net_worth) * 50 # 14 day trailing  
             # reward -= (current_lowess_grad_scaled - 1) * (1 - current_holding) * 50 # Less reward when asset decreses in value
             # reward = 0
+            reward *= 1 - (self.hold_triggers / self.max_steps) * 1 / (self.episode)
             pass
 
         reward *= delay_modifier
@@ -171,6 +175,7 @@ class StockTradingEnv2(gym.Env):
         # Iterate step
         self.iteration_step += 1
         self.current_step += 1
+        self.episode += 1
 
         return obs, reward, done
 
@@ -240,6 +245,7 @@ class StockTradingEnv2(gym.Env):
     def reset(self):
 
         # Reset the state of the environment to an initial state
+        self.episode = 1
         self.ticker = None
         self.balance = INITIAL_ACCOUNT_BALANCE
         self.net_worth = INITIAL_ACCOUNT_BALANCE
@@ -251,6 +257,7 @@ class StockTradingEnv2(gym.Env):
         self.total_sales_value = 0
         self.buy_triggers = 0
         self.sell_triggers = 0
+        self.hold_triggers = 0
         self.amounts = list()
 
         # Set initial values

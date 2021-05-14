@@ -80,8 +80,7 @@ class App:
 
         # Refresh
         delete_dropdown = st.sidebar.beta_expander('Delete model')
-        # delete_button = st.
-        if delete_dropdown.button('Delete model'):
+        if delete_dropdown.button('Delete'):
             
             pass
 

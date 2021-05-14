@@ -2,7 +2,7 @@ from keras.models import Sequential
 from keras.layers import LSTM, GRU, Input
 from keras.layers.core import Dense, Dropout, Activation
 from keras.optimizers import RMSprop, Adam, SGD
-from keras.losses import SparseCategoricalCrossentropy, CategoricalCrossentropy, MeanSquaredError
+from keras.losses import SparseCategoricalCrossentropy, CategoricalCrossentropy, MeanAbsoluteError
 from keras.layers.merge import concatenate
 from keras.layers import Flatten, BatchNormalization, Concatenate
 from keras.layers.convolutional import Conv1D, Conv2D
@@ -45,10 +45,10 @@ class Agent:
 
         # Constants
         self.DISCOUNT = 0.99
-        self.REPLAY_MEMORY_SIZE = 100_000  # How many last steps to keep for model training
+        self.REPLAY_MEMORY_SIZE = 50_000  # How many last steps to keep for model training
         self.MIN_REPLAY_MEMORY_SIZE = 0.3 * self.REPLAY_MEMORY_SIZE  # Minimum number of steps in a memory to start training
-        self.MINIBATCH_SIZE = 8  # How many steps (samples) to use for training
-        self.UPDATE_TARGET_EVERY = 100  # Terminal states (end of episodes)
+        self.MINIBATCH_SIZE = 16  # How many steps (samples) to use for training
+        self.UPDATE_TARGET_EVERY = 10  # Terminal states (end of episodes)
 
         # Main model - gets trained every step
         self.st_shape = model_shape[0]
@@ -64,6 +64,7 @@ class Agent:
         self.target_model.set_weights(self.model.get_weights())
 
         # Parameters
+        self.replay_memory_allocation = 0
         self.replay_memory = deque(maxlen=self.REPLAY_MEMORY_SIZE)
         self.replay_priority = deque(maxlen=self.REPLAY_MEMORY_SIZE)
         self.tensorboard = ModifiedTensorBoard(log_dir=f"logs/log-{1}")
@@ -71,8 +72,9 @@ class Agent:
         self.elapsed = 0
         self.conf_mat = np.array([])
 
-        # MSE to calculate the error for prioritized replay priority
-        self.mse = MeanSquaredError(reduction=tf.keras.losses.Reduction.NONE)
+        # MAE to calculate the error for prioritized replay priority
+        self.mae = MeanAbsoluteError(reduction=tf.keras.losses.Reduction.NONE)
+        self.action_errors = {0:list() ,1:list(), 2:list()}
 
         # Assertions
         # assert model_shape==tuple() , 'Missing model shape'
@@ -136,7 +138,7 @@ class Agent:
         # Compile model
         model = Model(inputs=[st_head, lt_head], outputs=action_prediction)
 
-        opt = Adam(learning_rate=1e-7)
+        opt = Adam(learning_rate=1e-10)
 
         # Cost of missclassification
         self.cost_matrix = np.ones((3,3))
@@ -280,6 +282,7 @@ class Agent:
         # transition = (current_state, action, reward, new_state, done)
         self.replay_memory.append(transition)
         self.replay_priority.append(max(self.replay_priority, default=1))
+        self.replay_memory_allocation = len(self.replay_memory) / self.REPLAY_MEMORY_SIZE
 
     def get_replay_probabilities(self, priority_scale):
         scaled_priorities = np.array(self.replay_priority) ** priority_scale
@@ -367,9 +370,11 @@ class Agent:
         future_qs_list = self.predict(new_current_states, self.target_model, minibatch=True)
 
         # Calculate the errors
-        errors = self.mse(future_qs_list, current_qs_list).numpy()
+        errors = self.mae(future_qs_list, current_qs_list).numpy()
 
         # Enumerate the batches
+        if step==1: #reset action errors only at first step
+            self.action_errors = {0:list() ,1:list(), 2:list()}
         _X_st = list()
         _X_lt = list()
         _y = list()
@@ -386,7 +391,10 @@ class Agent:
             current_qs = current_qs_list[index]
             current_qs[action] = new_q
 
-            # And append to our training data
+            # Save the errors for each action
+            self.action_errors[action].append(errors[index])
+
+            # Append the training data
             _X_st.append(current_state['st'])
             _X_lt.append(current_state['lt'])
             _y.append(current_qs)
@@ -415,7 +423,8 @@ class Agent:
 
 
     def get_qs(self, state):
-        ''' Queries main network for Q values given current observation space (environment state) '''
+        ''' Queries main network for Q values given 
+        current observation space (environment state) '''
         return self.predict(state, self.model, minibatch=False)[0]
 
 

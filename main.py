@@ -1,4 +1,6 @@
 import sys
+import gc
+
 
 from core import Agent, DataCluster, ModelAssessment, StockTradingEnv2
 from core.tools import safe_div, tic, toc
@@ -181,7 +183,6 @@ class Trader:
             # Update tensorboard step every episode
             self.agent.tensorboard.step = episode
 
-
             # Reset episode reward and step number
             self.episode_reward = list()
             self.reward_action = [0, 0, 0]
@@ -223,6 +224,21 @@ class Trader:
                 current_state = new_state
                 step += 1
 
+            max_action_errors = {
+                0:[max(self.agent.action_errors[0], default=0)],
+                1:[max(self.agent.action_errors[1], default=0)],
+                2:[max(self.agent.action_errors[2], default=0)]}
+            min_action_errors = {
+                0:[min(self.agent.action_errors[0], default=0)],
+                1:[min(self.agent.action_errors[1], default=0)],
+                2:[min(self.agent.action_errors[2], default=0)]}
+            mean_action_errors = {
+                0:[np.mean(self.agent.action_errors[0])],
+                1:[np.mean(self.agent.action_errors[1])],
+                2:[np.mean(self.agent.action_errors[2])]}
+            print('max_action_errors: ', max_action_errors)
+            print('min_action_errors: ', min_action_errors)
+            print('mean_action_errors: ', mean_action_errors)
 
             # Save model
             if not episode % EPOCH_SIZE or episode == 1:
@@ -236,13 +252,16 @@ class Trader:
 
             # Time tracking
             iteration_time = datetime.fromtimestamp(episode_iter.last_print_t)
-            datetime_delta = iteration_time + last_iteration_time
+            datetime_delta = iteration_time - last_iteration_time
             self.delta_time = datetime_delta.seconds + datetime_delta.microseconds/1e6
             last_iteration_time = iteration_time
 
             # Render
             if not episode % AGGREGATE_STATS_EVERY:
                 self._render(episode)
+
+            # Free memory
+            gc.collect()
 
 
     def _render(self, episode):
@@ -267,6 +286,7 @@ class Trader:
         # Print episode stats
         self.estats.loc[episode] = self._estats
         print(self.estats.loc[episode-10:episode])
+        print(f'Replay memory allocation: {self.agent.replay_memory_allocation * 100}%')
 
         # Pickle and save episode stats
         self.estats.loc[1:episode].to_pickle(self.folder / 'estats.pkl')
